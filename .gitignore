@@ -1,0 +1,12 @@
+.gradle/
+build/
+app/build/
+local.properties
+.idea/
+*.iml
+.kotlin/
+# Never commit the signing key or its passwords
+signing/
+
+# Built artifacts
+release/
