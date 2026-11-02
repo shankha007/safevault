@@ -501,3 +501,28 @@ the Kotlin screens. Re-run the script after UI changes.
 **Alternatives:** screen-recording the emulator (black under FLAG_SECURE, and slow);
 Playwright's built-in video capture (real-time, lower quality, no clean caption timing).
 
+---
+
+## D-030 · LinkedIn carousel, short videos and post series
+**Date:** 2026-11-03 · **Status:** Accepted (temporary, lives with D-027)
+
+**Decision:** a social media kit in `demos/`:
+- **Carousel:** 9 slides at 1080x1350 (LinkedIn's 4:5 portrait), exported as a PDF because
+  LinkedIn shows document posts as swipeable slides. Each slide has one headline, two or
+  three sentences, and a phone image from the preview.
+- **Short videos:** three parts of about 50-70 s, built from the full demo's chapters:
+  1. Private by design: create vault, unlock, privacy.
+  2. Logins and strong passwords: home, search, add a login, use a login.
+  3. Bank cards and backups: add a card, card details, backups.
+
+  Each part is made at 16:9 for the feed and at 9:16 for phone-first viewing. Vertical
+  frames stack the feature list, the phone and the subtitle; the content is the same. Each
+  part's music is moved to a different key so the series doesn't sound identical.
+- **Posts:** `LINKEDIN_POSTS.md` has four posts in order (carousel first, then parts 1-3).
+  They're written in the first person and state concrete facts from the app and this log.
+
+**Why:** chapters were already scripted for the full demo (D-029), so reusing them keeps all
+the material consistent and lets it be regenerated after UI changes.
+
+**Limits:** same as D-029. The material shows the HTML preview and mock-ups, not the APK.
+

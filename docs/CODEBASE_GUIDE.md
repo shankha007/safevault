@@ -24,9 +24,11 @@ password-manager/
 │   ├── USER_WORKFLOW.md        how the app is used
 │   └── DECISIONS.md            technical decision log
 ├── release/                    finished APKs to install on the phone
-├── demos/                      product demo videos (NOT in git, like release/)
+├── demos/                      demo video, shorts/, carousel/, LINKEDIN_POSTS.md (NOT in git)
 ├── desktop-preview/            TEMPORARY HTML mirror of the UI for testing on a PC (D-027, NOT in git)
-│   └── make_demo.py            records the captioned product demo video from it (D-029)
+│   ├── make_demo.py            records the captioned product demo video from it (D-029)
+│   ├── make_shorts.py          records 3 short feature videos, 16:9 and 9:16 (D-030)
+│   └── make_carousel.py        builds the LinkedIn carousel PDF and slide PNGs (D-030)
 ├── tools/gen_brand_icons.py    regenerates the bundled brand logos (D-028); needs internet, the app doesn't
 └── app/
     ├── build.gradle.kts        SDK levels, signing, R8, dependencies
@@ -207,6 +209,13 @@ needs a check on the phone.
 with numpy and encodes `demos/SafeVault-1.1.0-demo.mp4` (1080p, 30 fps, about 3 min) with
 the ffmpeg bundled in `imageio-ffmpeg`. Needs `pip install playwright imageio-ffmpeg pillow
 numpy` and Chrome. Generated 2026-11-02: 279 shots, 3:05, music at -22 dB mean.
+
+**Social media kit:** `make_shorts.py` reuses the demo's chapter functions to record three
+short videos into `demos/shorts/`, each as `-16x9.mp4` (1920x1080) and `-9x16.mp4`
+(1080x1920, layout swapped by `VERTICAL_CSS`); pass a part number to re-record one.
+`make_carousel.py` screenshots the preview's phone at 2x and lays out 9 slides at 1080x1350,
+saved as `demos/carousel/SafeVault-carousel.pdf` plus `slide-NN.png`. The post texts are in
+`demos/LINKEDIN_POSTS.md`.
 
 **On a device or emulator:** an Android 15 emulator (`safevault_test`) is set up. FLAG_SECURE
 makes screenshots come out black, even in debug builds, so UI checks use
