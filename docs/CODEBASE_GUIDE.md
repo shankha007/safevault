@@ -12,6 +12,7 @@ _Last updated: 2026-10-28 (Phase 1)_
 
 ```
 password-manager/
+├── README.md                   project overview, features, install and build
 ├── build.gradle.kts            plugin versions (AGP, Kotlin, Compose, serialization)
 ├── settings.gradle.kts         repositories, module list
 ├── gradle.properties
