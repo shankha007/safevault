@@ -10,3 +10,5 @@ signing/
 
 # Built artifacts
 release/
+demos/
+desktop-preview/

@@ -474,3 +474,30 @@ own items, which is the usual practice in password managers.
 **Alternatives:** favicon download (needs internet, leaks site list); letting the user pick
 an icon (more taps, and few would); full-colour official logo files (no single licensed
 source, much larger).
+
+---
+
+## D-029 · Product demo video recorded from the desktop preview
+**Date:** 2026-11-02 · **Status:** Accepted (temporary, lives with D-027)
+
+**Decision:** the product tour `demos/SafeVault-1.1.0-demo.mp4` is made by
+`desktop-preview/make_demo.py`. It drives the HTML preview in headless Chrome, puts a caption
+panel (chapter, feature list with the current point highlighted, one-line subtitle) beside
+the phone, shows a touch marker before each tap, and stitches the screenshots with short
+crossfades. 13 chapters: create vault, unlock and lockout, home, search and filters, add a
+login with the generator, copy and reveal, add a card, card details, edit/favourite/delete,
+settings, backups, privacy, dark mode. Screens the preview doesn't have (create vault,
+fingerprint prompt, generator, settings, dialogs) are drawn as mock-ups with the same CSS.
+The music is a quiet lo-fi chord loop synthesised in the script, so there is no licensing
+question.
+
+**Why:** FLAG_SECURE (D-011) makes screen recordings of the real app black, and the emulator
+is too slow for smooth footage. The preview gives clean, repeatable frames.
+
+**Limits:** it shows the preview, not the APK, so it can drift from the app like the preview
+itself. Mock-up screens show the documented behaviour (USER_WORKFLOW.md), not pixel copies of
+the Kotlin screens. Re-run the script after UI changes.
+
+**Alternatives:** screen-recording the emulator (black under FLAG_SECURE, and slow);
+Playwright's built-in video capture (real-time, lower quality, no clean caption timing).
+

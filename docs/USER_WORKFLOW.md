@@ -17,6 +17,9 @@ _Last updated: 2026-10-28 (Phase 1)_
    Tap **More details → Install anyway**.
 5. After installing, you can turn the "Allow from this source" permission off again.
 
+**Want a quick tour first?** `demos/SafeVault-1.1.0-demo.mp4` is a 3-minute captioned video
+of every feature below.
+
 **Updating from an older version:** install the new APK the same way, over the old one.
 Android shows **Update**; your vault, settings and fingerprint unlock stay as they are. Don't
 uninstall first: uninstalling deletes the vault on the phone (restore from a backup if you

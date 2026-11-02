@@ -23,7 +23,9 @@ password-manager/
 │   ├── USER_WORKFLOW.md        how the app is used
 │   └── DECISIONS.md            technical decision log
 ├── release/                    finished APKs to install on the phone
-├── desktop-preview/            TEMPORARY HTML mirror of the UI for testing on a PC (D-027)
+├── demos/                      product demo videos (NOT in git, like release/)
+├── desktop-preview/            TEMPORARY HTML mirror of the UI for testing on a PC (D-027, NOT in git)
+│   └── make_demo.py            records the captioned product demo video from it (D-029)
 ├── tools/gen_brand_icons.py    regenerates the bundled brand logos (D-028); needs internet, the app doesn't
 └── app/
     ├── build.gradle.kts        SDK levels, signing, R8, dependencies
@@ -198,6 +200,12 @@ with the same key, or Android refuses the update.
 **Desktop preview:** open `desktop-preview/index.html` in any browser. It mirrors the screens
 and ports the `CardUtils` rules to JavaScript; it is not the Kotlin code, so the APK still
 needs a check on the phone.
+
+**Demo video:** `python -I desktop-preview/make_demo.py` drives the preview in headless Chrome
+(Playwright), screenshots each step with a caption panel, generates soft background music
+with numpy and encodes `demos/SafeVault-1.1.0-demo.mp4` (1080p, 30 fps, about 3 min) with
+the ffmpeg bundled in `imageio-ffmpeg`. Needs `pip install playwright imageio-ffmpeg pillow
+numpy` and Chrome. Generated 2026-11-02: 279 shots, 3:05, music at -22 dB mean.
 
 **On a device or emulator:** an Android 15 emulator (`safevault_test`) is set up. FLAG_SECURE
 makes screenshots come out black, even in debug builds, so UI checks use
