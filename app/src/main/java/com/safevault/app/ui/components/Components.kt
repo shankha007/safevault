@@ -2,6 +2,7 @@ package com.safevault.app.ui.components
 
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -11,6 +12,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -41,8 +43,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.vector.addPathNodes
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -52,9 +60,15 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.isSystemInDarkTheme
+import com.safevault.app.R
 import com.safevault.app.data.ItemType
 import com.safevault.app.data.VaultItem
+import com.safevault.app.ui.theme.BrandColors
 import com.safevault.app.ui.theme.StatusColors
+import com.safevault.app.util.Brand
+import com.safevault.app.util.BrandMatcher
 import com.safevault.app.util.PasswordStrength
 import com.safevault.app.util.Strength
 import kotlinx.coroutines.launch
@@ -140,8 +154,28 @@ private val avatarPalette = listOf(
     Color(0xFFC2620E), Color(0xFF0E7C93), Color(0xFFB0306A), Color(0xFF55606E),
 )
 
+/** The brand behind an item, if the bundled catalogue knows it (D-028). */
+fun brandOf(item: VaultItem): Brand? = when (item.type) {
+    ItemType.LOGIN -> BrandMatcher.forLogin(item.name, item.login?.url ?: "")
+    ItemType.CARD -> BrandMatcher.forCard(item.name, item.card?.bank ?: "", item.card?.network ?: "")
+}
+
+/** Logos are parsed once per brand and reused. */
+private val brandVectors = HashMap<String, ImageVector>()
+
+private fun brandVector(brand: Brand): ImageVector = brandVectors.getOrPut(brand.slug) {
+    ImageVector.Builder(brand.slug, 24.dp, 24.dp, 24f, 24f)
+        .addPath(addPathNodes(brand.path), fill = SolidColor(Color.White))
+        .build()
+}
+
 @Composable
 fun ItemAvatar(item: VaultItem, size: Int = 40) {
+    val brand = remember(item.name, item.login?.url, item.card?.bank, item.card?.network) { brandOf(item) }
+    if (brand != null) {
+        BrandAvatar(brand, item, size)
+        return
+    }
     val color = avatarPalette[(item.name.lowercase().hashCode() and 0x7fffffff) % avatarPalette.size]
     Box(
         Modifier
@@ -158,6 +192,37 @@ fun ItemAvatar(item: VaultItem, size: Int = 40) {
                 color = color,
                 fontWeight = FontWeight.SemiBold,
                 fontSize = (size * 0.42).sp,
+            )
+        }
+    }
+}
+
+/**
+ * Brand tile, styled like an app icon: the brand colour with the logo in white, or in black
+ * for very light brand colours (Snapchat yellow). Brands without a free logo show their
+ * first letter instead.
+ */
+@Composable
+private fun BrandAvatar(brand: Brand, item: VaultItem, size: Int) {
+    val bg = Color(brand.color)
+    val fg = if (bg.luminance() > 0.6f) Color.Black else Color.White
+    Box(
+        Modifier
+            .size(size.dp)
+            .clip(RoundedCornerShape((size / 4).dp))
+            .background(bg)
+            // Keeps black tiles (X, GitHub, Apple) visible on the dark theme's surface.
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f), RoundedCornerShape((size / 4).dp)),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (brand.path != null) {
+            Icon(brandVector(brand), contentDescription = brand.title, tint = fg, modifier = Modifier.size((size * 0.55).dp))
+        } else {
+            Text(
+                brand.title.take(1),
+                color = fg,
+                fontWeight = FontWeight.Bold,
+                fontSize = (size * 0.45).sp,
             )
         }
     }
@@ -281,4 +346,27 @@ fun PasswordPromptDialog(
         confirmButton = { TextButton(onClick = { submit() }, enabled = !busy) { Text(confirmText) } },
         dismissButton = { TextButton(onClick = onDismiss, enabled = !busy) { Text("Cancel") } },
     )
+}
+
+/** The SafeVault brand gradient for the current light/dark mode. */
+@Composable
+fun brandBrush(): Brush =
+    Brush.linearGradient(if (isSystemInDarkTheme()) BrandColors.gradientDark else BrandColors.gradientLight)
+
+/**
+ * The app's logo: the launcher icon's shield-and-keyhole on the brand gradient.
+ * [onGradient] draws a frosted tile instead, for use on top of the gradient itself.
+ */
+@Composable
+fun BrandMark(size: Int = 48, onGradient: Boolean = false) {
+    Box(
+        Modifier
+            .size(size.dp)
+            .clip(RoundedCornerShape((size * 0.3).dp))
+            .let { if (onGradient) it.background(Color.White.copy(alpha = 0.16f)) else it.background(brandBrush()) },
+        contentAlignment = Alignment.Center,
+    ) {
+        // The vector is a 108dp adaptive-icon foreground; scaling it up a little fills the tile.
+        Image(painterResource(R.drawable.ic_launcher_foreground), contentDescription = null, modifier = Modifier.requiredSize((size * 1.35).dp))
+    }
 }

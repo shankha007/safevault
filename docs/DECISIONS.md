@@ -379,3 +379,98 @@ phone, and automated UI tests. These will be checked on your phone.
 
 **Alternatives:** Espresso or Compose UI tests. These are worth adding once the UI settles,
 because they need a running device and slow the build.
+
+---
+
+## D-025 · Card expiry is stored as digits while editing; the slash is only drawn
+**Date:** 2026-11-02 · **Status:** Accepted
+
+**Problem:** the expiry field wrote the "/" into the text itself. Compose kept the cursor
+where it was, which was before the new slash, so the year digits were inserted in reverse
+order: typing `1 2 2 7` produced `12/72`.
+
+**Decision:** the editor keeps only the digits (`"1227"`). A `VisualTransformation`
+(`ExpiryTransformation`) draws them as `12/27` with an offset mapping, so the cursor always
+follows the digits and backspace skips over the slash. The slash is added back when saving,
+so the stored format (`MM/YY`) is unchanged and existing cards open normally. A first digit
+of 2 to 9 becomes `0x`, since no month starts with those digits.
+
+**Alternatives:** keeping the slash in the value and moving the cursor to the end with a
+`TextFieldValue` (works, but editing in the middle jumps the cursor); two separate MM and YY
+boxes (more taps, and autofill-style paste of "12/27" breaks).
+
+---
+
+## D-026 · Branded Home header and lock screens
+**Date:** 2026-11-02 · **Status:** Accepted
+
+**Problem:** the app name appeared nowhere on the Home screen (the bar said "Your vault"),
+so the app had little recall value.
+
+**Decision:** Home now opens with a fixed header on a blue gradient that starts at the
+launcher icon's colour: the launcher's shield-and-keyhole as a logo tile (`BrandMark`), the
+name **SafeVault**, the line "Encrypted · Offline", the generator / lock / settings buttons,
+and counts of logins, cards and favourites. Items are shown as rounded cards. The setup and
+unlock screens show the same logo and name. Status-bar icons switch to light while Home is
+shown so they stay readable on the blue.
+
+**Why fixed, not scrolling:** the name and the lock button stay visible at all times.
+
+**Alternatives:** a Material `LargeTopAppBar` titled "SafeVault" (plainer, collapses away);
+a separate splash screen (seen for a moment only, and it slows every unlock).
+
+---
+
+## D-027 · Temporary desktop preview before building the APK
+**Date:** 2026-11-02 · **Status:** Accepted (temporary)
+
+**Decision:** `desktop-preview/index.html` is a single HTML file that mirrors the Lock, Home,
+Add/Edit and Detail screens with the same colours and the `CardUtils` rules ported to
+JavaScript, so UI changes can be tried in a desktop browser before an APK is built. It holds
+sample data in memory only, has no encryption, and is not part of the app build.
+
+**Why:** the emulator on this PC is slow and FLAG_SECURE blocks screenshots, which makes
+quick visual review hard.
+
+**Limits:** it is a copy, not the Kotlin code, so it can drift. Delete the folder once the
+APK is signed off.
+
+**Alternatives:** Compose Multiplatform desktop target (needs the UI split into a shared
+module, a large change); emulator screenshots with FLAG_SECURE turned off in debug builds
+(would weaken a security check, see D-011).
+
+---
+
+## D-028 · Bundled brand logos for items, matched on the phone
+**Date:** 2026-11-02 · **Status:** Accepted
+
+**Decision:** item avatars show the real brand logo for common apps, banks and card
+networks. The logos are vector paths from **Simple Icons 16.34.0** (CC0 licence), compiled
+into the app as `util/BrandCatalog.kt`. `tools/gen_brand_icons.py` downloads the pinned
+release, keeps the 75 chosen brands, checks every path is plain SVG path syntax, and writes
+the Kotlin file and the preview's copy. Each logo sits in white (black for very light
+colours) on a tile of the brand's colour, like an app icon.
+
+**Matching** (`BrandMatcher`): the Website field first (longest matching domain, so
+`mail.google.com` is Gmail, not Google), then whole words of the name (longest keyword wins,
+so "Google Pay" beats "Google"). Cards use the bank, then the name, then the detected
+network. Generic words such as "visa" and "discover" are not name keywords, so a login
+called "Visa application" isn't labelled as a card network.
+
+**Brands with no free logo:** LinkedIn, Amazon, Microsoft (Outlook, Hotmail, Xbox,
+OneDrive, Teams, Skype), Slack, Yahoo, Flipkart, ChatGPT/OpenAI and Canva asked Simple Icons
+to remove theirs. They show their first letter on the brand colour rather than a
+hand-drawn imitation. SBI, Kotak, RuPay, Hotstar and other brands that aren't in the set
+keep the normal letter avatar.
+
+**Why bundled:** SafeVault has no INTERNET permission (D-003). Fetching favicons would need
+it and would tell a server which sites are in the vault. Matching runs locally on fields
+that are already decrypted in memory while the vault is open, so nothing new is exposed.
+Cost: about 73 KB of source, a little more in the APK.
+
+**Trademarks:** the logos belong to their owners and are used only to identify the user's
+own items, which is the usual practice in password managers.
+
+**Alternatives:** favicon download (needs internet, leaks site list); letting the user pick
+an icon (more taps, and few would); full-colour official logo files (no single licensed
+source, much larger).

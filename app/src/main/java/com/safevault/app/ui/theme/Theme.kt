@@ -50,6 +50,15 @@ private val Dark = darkColorScheme(
     surfaceContainerLow = Color(0xFF191C21),
 )
 
+/**
+ * SafeVault brand gradient, used behind the logo and the Home header so the app is
+ * recognisable at a glance. Starts at the launcher icon's blue.
+ */
+object BrandColors {
+    val gradientLight = listOf(Color(0xFF1E4FD8), Color(0xFF2A3BB7), Color(0xFF15237A))
+    val gradientDark = listOf(Color(0xFF1E3E9E), Color(0xFF1A2C78), Color(0xFF0E1645))
+}
+
 /** Colours for the strength meter and warnings, readable in light and dark mode. */
 object StatusColors {
     val weak = Color(0xFFD9483B)

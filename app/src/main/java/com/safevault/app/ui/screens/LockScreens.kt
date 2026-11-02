@@ -21,7 +21,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Fingerprint
-import androidx.compose.material.icons.outlined.Shield
 import androidx.compose.material.icons.outlined.WarningAmber
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
@@ -47,6 +46,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.safevault.app.SafeVaultApp
@@ -55,6 +55,7 @@ import com.safevault.app.data.MAX_FAILED_ATTEMPTS
 import com.safevault.app.data.UnlockResult
 import com.safevault.app.data.VaultRepository
 import com.safevault.app.security.DeviceIntegrity
+import com.safevault.app.ui.components.BrandMark
 import com.safevault.app.ui.AuthOutcome
 import com.safevault.app.ui.LocalActivity
 import com.safevault.app.ui.biometricPrompt
@@ -84,21 +85,17 @@ private fun LockScaffold(content: @Composable () -> Unit) {
     }
 }
 
+/** Logo and app name, so the first and most-seen screens carry the SafeVault brand. */
 @Composable
 private fun ShieldBadge() {
-    Surface(
-        shape = RoundedCornerShape(24.dp),
-        color = MaterialTheme.colorScheme.primaryContainer,
-        modifier = Modifier.size(80.dp),
-    ) {
-        Box(contentAlignment = Alignment.Center) {
-            Icon(
-                Icons.Outlined.Shield,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                modifier = Modifier.size(44.dp),
-            )
-        }
+    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        BrandMark(size = 80)
+        Text(
+            "SafeVault",
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.primary,
+        )
     }
 }
 

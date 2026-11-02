@@ -35,8 +35,12 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.OffsetMapping
+import androidx.compose.ui.text.input.TransformedText
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import com.safevault.app.data.CardData
 import com.safevault.app.data.CardKind
@@ -69,7 +73,8 @@ private class Draft(repo: VaultRepository, existing: VaultItem?, type: ItemType,
     var holder by mutableStateOf(existing?.card?.holderName ?: "")
     var number by mutableStateOf(repo.reveal(existing?.card?.number, id, Field.CARD_NUMBER))
     var kind by mutableStateOf(existing?.card?.kind ?: CardKind.DEBIT)
-    var expiry by mutableStateOf(existing?.card?.expiry ?: "")
+    // Digits only ("1227"); the slash is drawn by ExpiryTransformation and added back on save.
+    var expiry by mutableStateOf(CardUtils.expiryToDigits(existing?.card?.expiry ?: ""))
     var cvv by mutableStateOf(repo.reveal(existing?.card?.cvv, id, Field.CVV))
     var pin by mutableStateOf(repo.reveal(existing?.card?.pin, id, Field.PIN))
 
@@ -111,7 +116,8 @@ fun EditScreen(
 
     val cardNumberDigits = draft.number.filter { it.isDigit() }
     val numberWarning = cardNumberDigits.isNotEmpty() && cardNumberDigits.length >= 12 && !CardUtils.luhnValid(cardNumberDigits)
-    val expiryWarning = draft.expiry.isNotEmpty() && !CardUtils.expiryValid(draft.expiry)
+    val expiryText = CardUtils.expiryFromDigits(draft.expiry)
+    val expiryWarning = draft.expiry.isNotEmpty() && !CardUtils.expiryValid(expiryText)
     val canSave = draft.name.isNotBlank() && !saving
 
     fun close() {
@@ -148,7 +154,7 @@ fun EditScreen(
                 last4 = cardNumberDigits.takeLast(4),
                 network = CardUtils.detectNetwork(cardNumberDigits),
                 kind = draft.kind,
-                expiry = draft.expiry,
+                expiry = expiryText,
                 cvv = repo.seal(draft.cvv, id, Field.CVV),
                 pin = repo.seal(draft.pin, id, Field.PIN),
             ) else null,
@@ -248,8 +254,9 @@ fun EditScreen(
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     OutlinedTextField(
                         value = draft.expiry,
-                        onValueChange = { v -> draft.expiry = formatExpiryInput(draft.expiry, v) },
+                        onValueChange = { v -> draft.expiry = CardUtils.sanitizeExpiryDigits(v) },
                         label = { Text("Expiry (MM/YY)") }, singleLine = true, isError = expiryWarning,
+                        visualTransformation = ExpiryTransformation,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, autoCorrectEnabled = false),
                         modifier = Modifier.weight(1f),
                     )
@@ -289,13 +296,20 @@ fun EditScreen(
     }
 }
 
-/** Keeps expiry as MM/YY, inserting the slash automatically and handling backspace. */
-private fun formatExpiryInput(old: String, new: String): String {
-    val digits = new.filter { it.isDigit() }.take(4)
-    if (new.length < old.length && old.endsWith("/") && digits.length == 2) return digits.take(1)
-    return when {
-        digits.length > 2 -> digits.take(2) + "/" + digits.drop(2)
-        digits.length == 2 && new.length > old.length -> "$digits/"
-        else -> digits
+/**
+ * Shows the stored digits "MMYY" as "MM/YY". The slash exists only on screen, so the cursor
+ * always moves with the digits. (Writing the slash into the value itself left the cursor
+ * before it, and the year digits came out reversed: typing 1 2 2 7 gave "12/72".)
+ */
+private object ExpiryTransformation : VisualTransformation {
+    override fun filter(text: AnnotatedString): TransformedText {
+        val d = text.text
+        if (d.length < 2) return TransformedText(text, OffsetMapping.Identity)
+        val shown = d.take(2) + "/" + d.drop(2)
+        val mapping = object : OffsetMapping {
+            override fun originalToTransformed(offset: Int) = if (offset < 2) offset else offset + 1
+            override fun transformedToOriginal(offset: Int) = if (offset <= 2) offset else minOf(offset - 1, d.length)
+        }
+        return TransformedText(AnnotatedString(shown), mapping)
     }
 }

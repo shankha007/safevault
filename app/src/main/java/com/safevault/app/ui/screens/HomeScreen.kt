@@ -1,6 +1,24 @@
 package com.safevault.app.ui.screens
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.material3.ListItemDefaults
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.text.font.FontWeight
+import androidx.core.view.WindowCompat
+import com.safevault.app.ui.components.BrandMark
+import com.safevault.app.ui.components.brandBrush
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -39,7 +57,6 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -108,81 +125,97 @@ fun HomeScreen(
         }.sortedByDescending { it.favorite }
     }
 
+    // Light status-bar icons while the dark brand header sits behind them.
+    val activity = LocalActivity.current
+    val view = LocalView.current
+    DisposableEffect(Unit) {
+        val controller = WindowCompat.getInsetsController(activity.window, view)
+        val before = controller.isAppearanceLightStatusBars
+        controller.isAppearanceLightStatusBars = false
+        onDispose { controller.isAppearanceLightStatusBars = before }
+    }
+
     Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Your vault") },
-                actions = {
-                    IconButton(onClick = onGenerator) { Icon(Icons.Outlined.Password, "Password generator") }
-                    IconButton(onClick = { repo.lock() }) { Icon(Icons.Outlined.Lock, "Lock now") }
-                    IconButton(onClick = onSettings) { Icon(Icons.Outlined.Settings, "Settings") }
-                },
-            )
-        },
+        // The header draws behind the status bar itself, so the scaffold adds no insets.
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
         floatingActionButton = {
             ExtendedFloatingActionButton(
                 onClick = { showAddSheet = true },
                 icon = { Icon(Icons.Outlined.Add, null) },
                 text = { Text("Add") },
+                modifier = Modifier.navigationBarsPadding(),
             )
         },
     ) { padding ->
-        LazyColumn(
-            Modifier.fillMaxSize().padding(padding),
-            contentPadding = PaddingValues(bottom = 96.dp),
-        ) {
-            item {
-                OutlinedTextField(
-                    value = query,
-                    onValueChange = { query = it },
-                    placeholder = { Text(if (items.size == 1) "Search 1 item" else "Search ${items.size} items") },
-                    leadingIcon = { Icon(Icons.Outlined.Search, null) },
-                    trailingIcon = {
-                        if (query.isNotEmpty()) IconButton(onClick = { query = "" }) { Icon(Icons.Outlined.Clear, "Clear search") }
-                    },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(autoCorrectEnabled = false, imeAction = ImeAction.Search),
-                    shape = RoundedCornerShape(28.dp),
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
-                )
-            }
-            item {
-                Row(
-                    Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    Filter.entries.forEach { f ->
-                        FilterChip(selected = filter == f, onClick = { filter = f }, label = { Text(f.label) })
-                    }
-                }
-            }
-            item { BiometricSuggestion(repo) }
-
-            if (items.isEmpty()) {
-                item { EmptyVault(onAdd) }
-            } else if (visible.isEmpty()) {
+        Column(Modifier.fillMaxSize().padding(padding)) {
+            VaultHeader(items, onGenerator = onGenerator, onLock = { repo.lock() }, onSettings = onSettings)
+            LazyColumn(
+                Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(
+                    top = 12.dp,
+                    bottom = 96.dp + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding(),
+                ),
+            ) {
                 item {
-                    Text(
-                        "Nothing matches \"$query\".",
-                        modifier = Modifier.fillMaxWidth().padding(32.dp),
-                        textAlign = TextAlign.Center,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    OutlinedTextField(
+                        value = query,
+                        onValueChange = { query = it },
+                        placeholder = { Text(if (items.size == 1) "Search 1 item" else "Search ${items.size} items") },
+                        leadingIcon = { Icon(Icons.Outlined.Search, null) },
+                        trailingIcon = {
+                            if (query.isNotEmpty()) IconButton(onClick = { query = "" }) { Icon(Icons.Outlined.Clear, "Clear search") }
+                        },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(autoCorrectEnabled = false, imeAction = ImeAction.Search),
+                        shape = RoundedCornerShape(28.dp),
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
                     )
                 }
-            }
-            items(visible, key = { it.id }) { item ->
-                ListItem(
-                    headlineContent = { Text(item.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                    supportingContent = {
-                        val sub = subtitleOf(item)
-                        if (sub.isNotEmpty()) Text(sub, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    },
-                    leadingContent = { ItemAvatar(item) },
-                    trailingContent = {
-                        if (item.favorite) Icon(Icons.Rounded.Star, "Favourite", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
-                    },
-                    modifier = Modifier.clickable { onOpen(item.id) },
-                )
+                item {
+                    Row(
+                        Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Filter.entries.forEach { f ->
+                            FilterChip(selected = filter == f, onClick = { filter = f }, label = { Text(f.label) })
+                        }
+                    }
+                }
+                item { BiometricSuggestion(repo) }
+
+                if (items.isEmpty()) {
+                    item { EmptyVault(onAdd) }
+                } else if (visible.isEmpty()) {
+                    item {
+                        Text(
+                            "Nothing matches \"$query\".",
+                            modifier = Modifier.fillMaxWidth().padding(32.dp),
+                            textAlign = TextAlign.Center,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+                items(visible, key = { it.id }) { item ->
+                    Surface(
+                        shape = RoundedCornerShape(18.dp),
+                        color = MaterialTheme.colorScheme.surfaceContainerLow,
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+                    ) {
+                        ListItem(
+                            headlineContent = { Text(item.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                            supportingContent = {
+                                val sub = subtitleOf(item)
+                                if (sub.isNotEmpty()) Text(sub, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            },
+                            leadingContent = { ItemAvatar(item) },
+                            trailingContent = {
+                                if (item.favorite) Icon(Icons.Rounded.Star, "Favourite", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
+                            },
+                            colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                            modifier = Modifier.clickable { onOpen(item.id) },
+                        )
+                    }
+                }
             }
         }
     }
@@ -204,6 +237,70 @@ fun HomeScreen(
             )
             Spacer(Modifier.size(32.dp))
         }
+    }
+}
+
+/**
+ * Branded top of the Home screen: logo, app name and a count of what's in the vault, on the
+ * brand gradient. Fixed above the list so the name is always in view.
+ */
+@Composable
+private fun VaultHeader(items: List<VaultItem>, onGenerator: () -> Unit, onLock: () -> Unit, onSettings: () -> Unit) {
+    val onBrand = Color.White
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(bottomStart = 28.dp, bottomEnd = 28.dp))
+            .background(brandBrush()),
+    ) {
+        Column(Modifier.statusBarsPadding().padding(start = 20.dp, end = 8.dp, top = 8.dp, bottom = 18.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                BrandMark(size = 44, onGradient = true)
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        "SafeVault",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = onBrand,
+                        maxLines = 1,
+                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Outlined.Lock, null, tint = onBrand.copy(alpha = 0.75f), modifier = Modifier.size(12.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text(
+                            "Encrypted · Offline",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = onBrand.copy(alpha = 0.75f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+                IconButton(onClick = onGenerator) { Icon(Icons.Outlined.Password, "Password generator", tint = onBrand) }
+                IconButton(onClick = onLock) { Icon(Icons.Outlined.Lock, "Lock now", tint = onBrand) }
+                IconButton(onClick = onSettings) { Icon(Icons.Outlined.Settings, "Settings", tint = onBrand) }
+            }
+            Spacer(Modifier.height(14.dp))
+            Row(Modifier.padding(end = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                StatPill(items.count { it.type == ItemType.LOGIN }, "Logins", Modifier.weight(1f))
+                StatPill(items.count { it.type == ItemType.CARD }, "Cards", Modifier.weight(1f))
+                StatPill(items.count { it.favorite }, "Favourites", Modifier.weight(1f))
+            }
+        }
+    }
+}
+
+@Composable
+private fun StatPill(count: Int, label: String, modifier: Modifier = Modifier) {
+    Column(
+        modifier
+            .clip(RoundedCornerShape(14.dp))
+            .background(Color.White.copy(alpha = 0.14f))
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+    ) {
+        Text("$count", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color.White)
+        Text(label, style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.8f), maxLines = 1)
     }
 }
 

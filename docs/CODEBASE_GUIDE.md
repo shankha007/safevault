@@ -23,6 +23,8 @@ password-manager/
 │   ├── USER_WORKFLOW.md        how the app is used
 │   └── DECISIONS.md            technical decision log
 ├── release/                    finished APKs to install on the phone
+├── desktop-preview/            TEMPORARY HTML mirror of the UI for testing on a PC (D-027)
+├── tools/gen_brand_icons.py    regenerates the bundled brand logos (D-028); needs internet, the app doesn't
 └── app/
     ├── build.gradle.kts        SDK levels, signing, R8, dependencies
     ├── proguard-rules.pro      R8 rules (strips all Log calls)
@@ -70,7 +72,9 @@ password-manager/
 | File | What it does |
 |---|---|
 | `PasswordTools.kt` | `PasswordGenerator` (SecureRandom, at least one character from each chosen group, shuffled) and `PasswordStrength` (entropy estimate with penalties for common passwords and sequences). |
-| `CardUtils.kt` | Card network detection, Luhn check, number formatting, expiry validation. |
+| `BrandMatcher.kt` | `Brand` model and `BrandMatcher`: picks a brand for an item from its website (longest matching domain), then whole-word keywords in the name; cards use bank, then name, then card network. Runs offline. |
+| `BrandCatalog.kt` | **Generated** by `tools/gen_brand_icons.py`, do not edit. 83 brands: Simple Icons 16.34.0 logo paths (CC0) and colours, plus 8 colour-only brands with no free logo. |
+| `CardUtils.kt` | Card network detection, Luhn check, number formatting, expiry validation, and the expiry digit helpers `sanitizeExpiryDigits` / `expiryFromDigits` / `expiryToDigits` (D-025). |
 
 ### `ui/`: Jetpack Compose screens
 | File | What it does |
@@ -78,12 +82,12 @@ password-manager/
 | `AppRoot.kt` | Top-level switch on `VaultState` (Setup / Unlock / unlocked app) and the in-memory back stack (`Screen`: Home, Detail, Edit, Generator, Settings). |
 | `Biometric.kt` | `biometricPrompt()` suspend wrapper around `BiometricPrompt`, plus `LocalActivity`. |
 | `Reauth.kt` | `ReauthController` + `ReauthHost`: "confirm it's you" for PIN/CVV (fingerprint, or master password dialog), with a 60-second grace period. |
-| `theme/Theme.kt` | Light and dark colour schemes, strength-meter colours. |
-| `components/Components.kt` | `PasswordField`, `StrengthMeter`, `ItemAvatar`, `FieldRow`, `ConfirmDialog`, `PasswordPromptDialog`. |
-| `screens/LockScreens.kt` | `SetupScreen` (create or restore a vault) and `UnlockScreen` (password, fingerprint, lockout countdown, root warning). |
-| `screens/HomeScreen.kt` | Search, filter chips, item list, the add sheet, fingerprint suggestion card. |
+| `theme/Theme.kt` | Light and dark colour schemes, `BrandColors` (brand gradient), strength-meter colours. |
+| `components/Components.kt` | `PasswordField`, `StrengthMeter`, `ItemAvatar`, `FieldRow`, `ConfirmDialog`, `PasswordPromptDialog`, `BrandMark` (logo tile) and `brandBrush()` (D-026). `ItemAvatar` shows a brand logo tile when `brandOf(item)` finds one (D-028), otherwise the coloured letter / card icon. |
+| `screens/LockScreens.kt` | `SetupScreen` (create or restore a vault) and `UnlockScreen` (password, fingerprint, lockout countdown, root warning). Both show the logo and the SafeVault name. |
+| `screens/HomeScreen.kt` | Branded `VaultHeader` (logo, name, item counts, generator/lock/settings) fixed at the top, then search, filter chips, item list as rounded cards, the add sheet, fingerprint suggestion card. Switches status-bar icons to light while shown. |
 | `screens/DetailScreen.kt` | Shows a login or card. Reveal/copy with auto-hide after 30 s; PIN/CVV go through `ReauthController`. |
-| `screens/EditScreen.kt` | Add/edit form for logins and cards. `Draft` holds plain values only while open, sealed again on save. Shows the generator on top of itself so the draft survives (D-023). |
+| `screens/EditScreen.kt` | Add/edit form for logins and cards. `Draft` holds plain values only while open, sealed again on save. Shows the generator on top of itself so the draft survives (D-023). Expiry is kept as digits and drawn as MM/YY by `ExpiryTransformation` (D-025). |
 | `screens/GeneratorScreen.kt` | Password generator; can hand a password back to the editor. |
 | `screens/SettingsScreen.kt` | All settings, backup export/import (Storage Access Framework), change password, delete vault. |
 
@@ -186,6 +190,14 @@ with the same key, or Android refuses the update.
   password change, backup round trip, invalid backup files, re-sealing, merge rules, Argon2
   determinism.
 - `PasswordToolsTest`: generator length, character groups and uniqueness; strength ratings.
+- `BrandMatcherTest`: name and website matching, longest match wins, no matches inside other
+  words, card bank-then-network order, colour-only brands, catalogue sanity.
+- `CardUtilsTest`: expiry typed key by key keeps year digits in order, single-digit month
+  padding, extra digits dropped, saved value round trip, month validation.
+
+**Desktop preview:** open `desktop-preview/index.html` in any browser. It mirrors the screens
+and ports the `CardUtils` rules to JavaScript; it is not the Kotlin code, so the APK still
+needs a check on the phone.
 
 **On a device or emulator:** an Android 15 emulator (`safevault_test`) is set up. FLAG_SECURE
 makes screenshots come out black, even in debug builds, so UI checks use
@@ -225,6 +237,35 @@ SDK="$LOCALAPPDATA/Android/Sdk"
 | Delete vault | ✔ files removed, setup screen shown |
 | Restore from backup on the setup screen | ✔ both items back |
 | Crashes in logcat | none |
+
+**2026-11-02: v1.1.0 release APK** (`release/SafeVault-1.1.0.apk`, SHA-256
+`9a7aa98dfa7d2f23de1069d3806635e121d7fd679b5a488b571d40403af15d83`).
+
+| Check | Result |
+|---|---|
+| Unit tests (release variant) | 27/27 pass |
+| Version | `versionCode 2`, `versionName 1.1.0` |
+| Signature | v2, `CN=SafeVault, O=Personal, C=IN`, certificate SHA-256 `9a91a425…58f1095f`, **same as 1.0.0**, so it installs as an update |
+| Permissions | `USE_BIOMETRIC`, `USE_FINGERPRINT` only, **no INTERNET** |
+| `allowBackup` / `fullBackupContent` | both `false`; not debuggable |
+| Data/crypto/backup code vs 1.0.0 | unchanged (`git diff` empty for `data/`, `crypto/`, `security/`, manifest) |
+| Update over 1.0.0 on the emulator (`adb install`, no `-r`, no uninstall) | ✔ accepted as an update; `firstInstallTime` kept, `versionCode` 1 → 2 |
+| First launch after update | ✔ opens on "Vault locked" with the SafeVault logo and name, so the existing 1.0.0 vault was found; no crash in logcat |
+| Unlocking and using the updated vault, expiry typing, brand logos on device | not done: the emulator's UI is too slow to drive (see above); check on the phone |
+
+**2026-11-02: expiry fix and Home redesign (debug build).**
+
+| Check | Result |
+|---|---|
+| Unit tests | 21/21 pass (5 new in `CardUtilsTest`) |
+| `compileDebugKotlin`, `assembleDebug` | ✔ |
+| Setup screen shows logo and "SafeVault" (emulator, uiautomator) | ✔ |
+| Home header: name, "Encrypted · Offline", Logins/Cards/Favourites counts, three actions (emulator) | ✔ |
+| Expiry typed key by key on the emulator | **Not completed**: the emulator ran at ~2 fps on software rendering and stopped taking input. Covered by unit tests and the desktop preview. |
+| Unit tests after brand logos | 27/27 pass (6 new in `BrandMatcherTest`); debug build ✔ |
+| Preview: brand tiles for Gmail, HDFC, Netflix, Instagram, Swiggy, GitHub, Mastercard (Federal Bank card); LinkedIn letter on brand blue; "Work laptop" keeps its letter; dark mode readable | ✔ (brand logos not yet seen on a device) |
+| Logo: the preview's lock-screen logo had a distorted keyhole and an off-centre shield (preview-only bug, fixed). The APK draws the unmodified `ic_launcher_foreground` vector centred by `BrandMark`; confirmed in code, not by screenshot (FLAG_SECURE) | ✔ |
+| Desktop preview: `1227` → `12/27`, `529` → `05/29`, `13` flagged, backspace across the slash, `083199` → `08/31`, save shows `12/27` | ✔ |
 
 **Not yet tested:** fingerprint enrolment and unlock, import (merge) into an existing vault,
 change master password, the erase-after-10 setting, and a real phone.

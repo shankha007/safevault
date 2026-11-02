@@ -9,13 +9,18 @@ _Last updated: 2026-10-28 (Phase 1)_
 
 ## 1. Installing the app
 
-1. Copy `SafeVault-1.0.0.apk` to your phone (USB cable, Google Drive, or a pen drive).
+1. Copy the newest APK from `release/` (now `SafeVault-1.1.0.apk`) to your phone (USB cable, Google Drive, or a pen drive).
 2. Open it from the phone's **Files** app.
 3. Android asks to allow installs from that app. Choose **Settings → Allow from this source**,
    then go back and tap **Install**.
 4. Play Protect may say the app is unrecognised. That's because it isn't from the Play Store.
    Tap **More details → Install anyway**.
 5. After installing, you can turn the "Allow from this source" permission off again.
+
+**Updating from an older version:** install the new APK the same way, over the old one.
+Android shows **Update**; your vault, settings and fingerprint unlock stay as they are. Don't
+uninstall first: uninstalling deletes the vault on the phone (restore from a backup if you
+did). Taking a fresh backup before updating is a good habit.
 
 ---
 
@@ -72,7 +77,17 @@ Open SafeVault ──► Vault locked
 - **Filters:** All · Favourites · Logins · Cards
 - **List:** favourites appear first, then everything alphabetically. Cards show the bank and
   `•••• 1234`.
-- **Top bar:** 🔑 password generator · 🔒 lock now · ⚙ settings
+- **Logos:** well-known apps and sites show their own logo (Gmail, Netflix, Instagram,
+  WhatsApp, Swiggy, Paytm, PhonePe, HDFC, ICICI, Axis and about 70 more). The app recognises
+  them from the **Website** field first, then from the item's **Name**, so "My Gmail" or a
+  website of `mail.google.com` both work. Cards show the bank's logo if known, otherwise
+  Visa / Mastercard / Amex and so on. A few brands with no free logo (LinkedIn, Amazon,
+  Microsoft/Outlook, Flipkart, Slack, Yahoo, ChatGPT, Canva) show their first letter in the
+  brand colour. Anything else keeps a coloured letter. Logos are built into the app;
+  nothing is downloaded.
+- **Header:** the SafeVault logo and name on a blue band, with how many logins, cards and
+  favourites you have. It stays at the top while the list scrolls.
+- **Header buttons:** 🔑 password generator · 🔒 lock now · ⚙ settings
 - **Add button** (bottom right): choose **Login** or **Card**.
 
 ---
@@ -111,7 +126,9 @@ Open SafeVault ──► Vault locked
    - **Card number**: the network (Visa, Mastercard, RuPay, …) is shown as you type, and
      a warning appears if the number looks mistyped
    - **Name on card**
-   - **Expiry**: type 4 digits, the slash is added for you
+   - **Expiry**: type the 4 digits (for example `1227` for December 2027); the slash is
+     shown for you. A month from 2 to 9 can be typed as one digit: `529` becomes `05/29`.
+     Backspace works across the slash.
    - **CVV** and **PIN**: both optional
    - **Notes** (optional)
 4. Tap **Save**.

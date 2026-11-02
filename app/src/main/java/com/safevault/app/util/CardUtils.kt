@@ -51,6 +51,23 @@ object CardUtils {
         return out.toString()
     }
 
+    /**
+     * Cleans typed expiry digits (at most 4, no slash). A first digit of 2-9 can only be a
+     * single-digit month, so it becomes "0x" and the user goes straight on to the year.
+     */
+    fun sanitizeExpiryDigits(input: String): String {
+        val d = input.filter { it.isDigit() }
+        val padded = if (d.isNotEmpty() && d[0] in '2'..'9') "0$d" else d
+        return padded.take(4)
+    }
+
+    /** "1227" -> "12/27"; partial input is returned as is. Used when saving. */
+    fun expiryFromDigits(digits: String): String =
+        if (digits.length > 2) digits.take(2) + "/" + digits.drop(2) else digits
+
+    /** "12/27" -> "1227". Used when opening an existing card in the editor. */
+    fun expiryToDigits(expiry: String): String = expiry.filter { it.isDigit() }.take(4)
+
     /** True if MM/YY is a real month. */
     fun expiryValid(expiry: String): Boolean {
         val m = Regex("""^(\d{2})/(\d{2})$""").find(expiry) ?: return false
