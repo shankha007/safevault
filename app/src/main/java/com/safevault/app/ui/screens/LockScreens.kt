@@ -1,6 +1,7 @@
 package com.safevault.app.ui.screens
 
 import android.net.Uri
+import android.os.SystemClock
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -62,6 +63,7 @@ import com.safevault.app.ui.biometricPrompt
 import com.safevault.app.ui.components.PasswordField
 import com.safevault.app.ui.components.PasswordPromptDialog
 import com.safevault.app.ui.components.StrengthMeter
+import com.safevault.app.ui.components.formatWait
 import com.safevault.app.util.PasswordStrength
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -140,11 +142,15 @@ fun SetupScreen(repo: VaultRepository) {
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
         app.autoLock.externalActivityDone()
         if (uri == null) return@rememberLauncherForActivityResult
-        error = try {
-            backup = context.contentResolver.openInputStream(uri)!!.let { repo.readBackup(it) }
-            null
-        } catch (e: Exception) {
-            e.message ?: "Couldn't read that file."
+        scope.launch {
+            error = try {
+                backup = context.contentResolver.openInputStream(uri)!!.let { repo.readBackup(it) }
+                null
+            } catch (e: IllegalArgumentException) {
+                e.message
+            } catch (e: Exception) {
+                "Couldn't read that file."
+            }
         }
     }
 
@@ -233,16 +239,23 @@ fun UnlockScreen(repo: VaultRepository) {
     var pw by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
-    var lockedUntil by remember { mutableLongStateOf(meta?.lockoutUntil ?: 0L) }
-    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    // On the since-boot clock, which changing the date doesn't move (D-034).
+    var lockedUntil by remember { mutableLongStateOf(0L) }
+    var now by remember { mutableLongStateOf(SystemClock.elapsedRealtime()) }
     val biometricOn = meta?.biometricWrappedKey != null
 
+    LaunchedEffect(Unit) {
+        val ms = repo.lockoutRemainingMs()
+        if (ms > 0) lockedUntil = SystemClock.elapsedRealtime() + ms
+    }
     LaunchedEffect(lockedUntil) {
-        while (lockedUntil > System.currentTimeMillis()) {
-            now = System.currentTimeMillis()
+        while (lockedUntil > SystemClock.elapsedRealtime()) {
+            now = SystemClock.elapsedRealtime()
             delay(1000)
         }
-        now = System.currentTimeMillis()
+        now = SystemClock.elapsedRealtime()
+        // Lets the repository record that the lockout is over.
+        if (lockedUntil != 0L) repo.lockoutRemainingMs()
     }
     val lockedOut = lockedUntil > now
 
@@ -250,7 +263,7 @@ fun UnlockScreen(repo: VaultRepository) {
         scope.launch {
             val cipher = repo.biometricUnlockCipher()
             if (cipher == null) {
-                message = "Fingerprint unlock was turned off because the fingerprints on this phone changed. Use your master password."
+                message = "Fingerprint unlock was turned off because the fingerprints on this phone changed, or its key stopped working. Use your master password."
                 return@launch
             }
             when (val r = activity.biometricPrompt(title = "Unlock SafeVault", cipher = cipher)) {
@@ -282,7 +295,7 @@ fun UnlockScreen(repo: VaultRepository) {
                     pw = ""
                 }
                 is UnlockResult.LockedOut -> {
-                    lockedUntil = r.untilMillis
+                    lockedUntil = SystemClock.elapsedRealtime() + r.remainingMs
                     message = "Too many wrong attempts."
                     pw = ""
                 }
@@ -314,9 +327,8 @@ fun UnlockScreen(repo: VaultRepository) {
             isError = message != null && !lockedOut,
         )
         if (lockedOut) {
-            val secs = ((lockedUntil - now) / 1000).coerceAtLeast(1)
             Text(
-                "Too many wrong attempts. Try again in ${if (secs >= 60) "${secs / 60} min ${secs % 60} s" else "$secs s"}.",
+                "Too many wrong attempts. Try again in ${formatWait(lockedUntil - now)}.",
                 color = MaterialTheme.colorScheme.error,
                 textAlign = TextAlign.Center,
             )

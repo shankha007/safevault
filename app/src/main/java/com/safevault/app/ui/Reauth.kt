@@ -8,6 +8,7 @@ import androidx.compose.runtime.setValue
 import com.safevault.app.crypto.BiometricKeys
 import com.safevault.app.data.VaultRepository
 import com.safevault.app.ui.components.PasswordPromptDialog
+import com.safevault.app.ui.components.passwordCheckError
 import kotlinx.coroutines.CompletableDeferred
 
 /**
@@ -23,9 +24,12 @@ class ReauthController(private val repo: VaultRepository) {
         if (!repo.settings.reauthForCardSecrets) return true
         if (SystemClock.elapsedRealtime() - lastSuccess < GRACE_MS) return true
 
-        val ok = if (BiometricKeys.isAvailable(activity)) {
-            when (activity.biometricPrompt(title = "Confirm it's you", subtitle = "to show the $what")) {
-                is AuthOutcome.Success -> true
+        // The prompt is tied to a Keystore key (D-036), so only a real fingerprint check
+        // counts. No usable key (new fingerprint enrolled, or none yet) means the password.
+        val cipher = if (BiometricKeys.isAvailable(activity)) BiometricKeys.reauthCipher() else null
+        val ok = if (cipher != null) {
+            when (val r = activity.biometricPrompt(title = "Confirm it's you", subtitle = "to show the $what", cipher = cipher)) {
+                is AuthOutcome.Success -> BiometricKeys.reauthProven(r.cipher)
                 AuthOutcome.UsePassword -> askPassword()
                 else -> false
             }
@@ -55,14 +59,10 @@ fun ReauthHost(controller: ReauthController, repo: VaultRepository) {
         message = "Enter your master password to continue.",
         confirmText = "Confirm",
         onSubmit = { pw ->
-            val ok = repo.verifyPassword(pw)
+            val error = passwordCheckError(repo.verifyPassword(pw))
             pw.fill(' ')
-            if (ok) {
-                pending.complete(true)
-                null
-            } else {
-                "That password isn't right."
-            }
+            if (error == null) pending.complete(true)
+            error
         },
         onDismiss = { pending.complete(false) },
     )

@@ -67,7 +67,10 @@ Open SafeVault ──► Vault locked
 ```
 
 - **Wrong password:** the first 4 mistakes have no penalty. After that you wait 30 s, then 1 min,
-  2 min, and so on, up to 1 hour.
+  2 min, and so on, up to 1 hour. Changing the phone's date doesn't shorten the wait, and
+  restarting the phone during a wait starts it again from the beginning.
+- Wrong master passwords typed anywhere in the app count: on the unlock screen, in "confirm
+  it's you", in Settings and when changing the password.
 - **Erase after 10 wrong passwords** (if you turned it on in Settings): the unlock screen
   shows how many attempts are left, and after the 10th the vault is erased.
 - **Fingerprints changed on the phone:** fingerprint unlock turns itself off for safety. Unlock
@@ -223,7 +226,12 @@ Suggested habit: export a new backup once a month, and after adding anything imp
 - Other apps: they can't read SafeVault's private files, and screenshots of SafeVault are
   blocked.
 - Cloud leaks: nothing goes to Google backup, and the app has no internet access.
-- Copy-paste leftovers: the clipboard is cleared automatically.
+- Copy-paste leftovers: the clipboard is cleared automatically, even if Android closes the
+  app before the timer runs.
+- Your keyboard learning your data: SafeVault asks the keyboard not to remember anything you
+  type in it (like Gboard's incognito mode).
+- Apps drawing over SafeVault to trick your taps: taps through another app's overlay are
+  ignored. If a screen-dimming app is on, SafeVault may ignore taps until you turn it off.
 
 **Not fully protected**
 - A rooted phone, or one with malware that has root access. The app warns you if the phone

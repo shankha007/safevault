@@ -21,10 +21,13 @@
         tools:targetApi="35">
 
         <!-- configChanges: rotation / dark-mode switches don't recreate the activity, so
-             typed secrets never have to go through saved-instance-state (which can hit disk). -->
+             typed secrets never have to go through saved-instance-state (which can hit disk).
+             taskAffinity "": no other app's activity can be slipped into SafeVault's task
+             (task hijacking / StrandHogg, D-037). -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
+            android:taskAffinity=""
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|uiMode|density|fontScale|locale|layoutDirection"
             android:excludeFromRecents="false"
             android:launchMode="singleTask"
@@ -34,5 +37,11 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- Backstop that clears a copied secret if the app is killed before its own timer
+             runs (D-038). Only this app's own PendingIntent can reach it. -->
+        <receiver
+            android:name=".security.ClipboardClearReceiver"
+            android:exported="false" />
     </application>
 </manifest>

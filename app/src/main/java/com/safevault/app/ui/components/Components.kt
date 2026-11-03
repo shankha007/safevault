@@ -33,6 +33,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -40,6 +41,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -64,6 +66,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.isSystemInDarkTheme
 import com.safevault.app.R
 import com.safevault.app.data.ItemType
+import com.safevault.app.data.UnlockResult
 import com.safevault.app.data.VaultItem
 import com.safevault.app.ui.theme.BrandColors
 import com.safevault.app.ui.theme.StatusColors
@@ -291,7 +294,10 @@ fun ConfirmDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
-        text = { Text(message) },
+        text = {
+            IgnoreObscuredTouches()
+            Text(message)
+        },
         confirmButton = {
             TextButton(onClick = onConfirm) {
                 Text(confirmText, color = if (destructive) MaterialTheme.colorScheme.error else Color.Unspecified)
@@ -330,6 +336,7 @@ fun PasswordPromptDialog(
         onDismissRequest = { if (!busy) onDismiss() },
         title = { Text(title) },
         text = {
+            IgnoreObscuredTouches()
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 if (message != null) Text(message)
                 PasswordField(
@@ -346,6 +353,34 @@ fun PasswordPromptDialog(
         confirmButton = { TextButton(onClick = { submit() }, enabled = !busy) { Text(confirmText) } },
         dismissButton = { TextButton(onClick = onDismiss, enabled = !busy) { Text("Cancel") } },
     )
+}
+
+/** Error text for a master-password check, or null when it passed. */
+fun passwordCheckError(r: UnlockResult): String? = when (r) {
+    UnlockResult.Success -> null
+    is UnlockResult.WrongPassword -> if (r.attemptsLeftBeforeWipe != null) {
+        "That password isn't right. ${r.attemptsLeftBeforeWipe} attempts left before the vault is erased."
+    } else {
+        "That password isn't right."
+    }
+    is UnlockResult.LockedOut -> "Too many wrong attempts. Try again in ${formatWait(r.remainingMs)}."
+    UnlockResult.Wiped -> "The vault was erased after too many wrong passwords."
+}
+
+fun formatWait(ms: Long): String {
+    val secs = ((ms + 999) / 1000).coerceAtLeast(1)
+    return if (secs >= 60) "${secs / 60} min ${secs % 60} s" else "$secs s"
+}
+
+/**
+ * Ignores taps that pass through another app's overlay (tapjacking, D-037). Android 12+ does
+ * this for untrusted overlays already; this covers 8-11. Call it inside a dialog's content:
+ * each dialog is its own window, so the activity's setting doesn't reach it.
+ */
+@Composable
+fun IgnoreObscuredTouches() {
+    val view = LocalView.current
+    SideEffect { view.rootView.filterTouchesWhenObscured = true }
 }
 
 /** The SafeVault brand gradient for the current light/dark mode. */

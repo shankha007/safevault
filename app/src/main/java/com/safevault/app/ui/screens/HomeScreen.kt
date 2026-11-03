@@ -62,7 +62,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -101,9 +100,9 @@ fun HomeScreen(
     onSettings: () -> Unit,
     onGenerator: () -> Unit,
 ) {
-    // Search text and filter are not secret, so they may survive configuration changes.
-    var query by rememberSaveable { mutableStateOf("") }
-    var filter by rememberSaveable { mutableStateOf(Filter.ALL) }
+    // Plain remember: search text can name items, so it stays out of saved state (D-037).
+    var query by remember { mutableStateOf("") }
+    var filter by remember { mutableStateOf(Filter.ALL) }
     var showAddSheet by remember { mutableStateOf(false) }
 
     val visible = remember(items, query, filter) {

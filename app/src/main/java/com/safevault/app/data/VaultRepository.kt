@@ -1,7 +1,9 @@
 package com.safevault.app.data
 
+import android.os.SystemClock
 import com.safevault.app.crypto.BiometricKeys
 import com.safevault.app.crypto.CryptoException
+import com.safevault.app.crypto.KdfParams
 import com.safevault.app.crypto.VaultKeys
 import com.safevault.app.crypto.fromB64
 import kotlinx.coroutines.Dispatchers
@@ -15,8 +17,6 @@ import java.io.InputStream
 import java.io.OutputStream
 import java.util.UUID
 import javax.crypto.Cipher
-import kotlin.math.min
-import kotlin.math.pow
 
 sealed interface VaultState {
     data object NoVault : VaultState
@@ -27,7 +27,7 @@ sealed interface VaultState {
 sealed interface UnlockResult {
     data object Success : UnlockResult
     data class WrongPassword(val attemptsLeftBeforeWipe: Int?) : UnlockResult
-    data class LockedOut(val untilMillis: Long) : UnlockResult
+    data class LockedOut(val remainingMs: Long) : UnlockResult
     data object Wiped : UnlockResult
 }
 
@@ -38,6 +38,9 @@ sealed interface UnlockResult {
 class VaultRepository(
     private val storage: VaultStorage,
     private val clock: () -> Long = System::currentTimeMillis,
+    private val elapsed: () -> Long = SystemClock::elapsedRealtime,
+    /** Android's boot count (Settings.Global.BOOT_COUNT), to notice reboots during a lockout. */
+    private val bootCount: () -> Int = { 0 },
 ) {
     private val mutex = Mutex()
     private val _state = MutableStateFlow<VaultState>(if (storage.exists()) VaultState.Locked else VaultState.NoVault)
@@ -62,38 +65,16 @@ class VaultRepository(
             storage.writeData(VaultCodec.encryptData(k, VaultData()))
             storage.writeMeta(created.meta)
             _meta.value = created.meta
+            BiometricKeys.ensureReauthKey()
             openSession(created.masterKey, k, VaultData())
         }
     }
 
     suspend fun unlockWithPassword(password: CharArray): UnlockResult = withContext(Dispatchers.Default) {
         mutex.withLock {
-            val meta = requireNotNull(_meta.value)
-            val now = clock()
-            if (meta.lockoutUntil > now) return@withLock UnlockResult.LockedOut(meta.lockoutUntil)
-
-            val master = VaultCodec.unwrapMaster(password, meta)
-            if (master == null) {
-                val failures = meta.failedAttempts + 1
-                if (meta.settings.wipeAfterFailures && failures >= MAX_FAILED_ATTEMPTS) {
-                    wipeLocked()
-                    return@withLock UnlockResult.Wiped
-                }
-                val updated = meta.copy(failedAttempts = failures, lockoutUntil = lockoutFor(failures, now))
-                saveMeta(updated)
-                return@withLock if (updated.lockoutUntil > now) {
-                    UnlockResult.LockedOut(updated.lockoutUntil)
-                } else {
-                    UnlockResult.WrongPassword(
-                        if (meta.settings.wipeAfterFailures) MAX_FAILED_ATTEMPTS - failures else null,
-                    )
-                }
-            }
-            openFromDisk(master)
-            if (meta.failedAttempts != 0 || meta.lockoutUntil != 0L) {
-                saveMeta(meta.copy(failedAttempts = 0, lockoutUntil = 0))
-            }
-            UnlockResult.Success
+            val (master, result) = checkPasswordLocked(password)
+            if (master != null) openFromDisk(master)
+            result
         }
     }
 
@@ -102,7 +83,7 @@ class VaultRepository(
         val wrapped = _meta.value?.biometricWrappedKey ?: return null
         val cipher = BiometricKeys.decryptCipher(wrapped)
         if (cipher == null) {
-            // Key was invalidated (fingerprints changed). Turn the feature off.
+            // Key was invalidated (fingerprints changed) or is unusable. Turn the feature off.
             _meta.value?.let { saveMeta(it.copy(biometricWrappedKey = null)) }
         }
         return cipher
@@ -113,7 +94,7 @@ class VaultRepository(
             val meta = requireNotNull(_meta.value)
             val master = BiometricKeys.unwrap(cipher, requireNotNull(meta.biometricWrappedKey))
             openFromDisk(master)
-            if (meta.failedAttempts != 0) saveMeta(meta.copy(failedAttempts = 0, lockoutUntil = 0))
+            if (meta.failedAttempts != 0 || meta.lockoutMs != 0L) saveMeta(Lockout.clear(meta))
         }
     }
 
@@ -125,17 +106,57 @@ class VaultRepository(
         if (_state.value is VaultState.Unlocked) _state.value = VaultState.Locked
     }
 
-    /** Checks the master password without changing state (used before sensitive actions). */
-    suspend fun verifyPassword(password: CharArray): Boolean = withContext(Dispatchers.Default) {
-        val meta = _meta.value ?: return@withContext false
-        VaultCodec.unwrapMaster(password, meta)?.also { it.fill(0) } != null
+    /**
+     * Checks the master password without changing state (used before sensitive actions).
+     * Wrong answers count towards the same lockout and auto-erase as the unlock screen (D-034).
+     */
+    suspend fun verifyPassword(password: CharArray): UnlockResult = withContext(Dispatchers.Default) {
+        mutex.withLock {
+            val (master, result) = checkPasswordLocked(password)
+            master?.fill(0)
+            result
+        }
     }
 
-    private fun lockoutFor(failures: Int, now: Long): Long {
-        // First 4 mistakes are free (typos). After that: 30 s, 1 min, 2 min ... capped at 1 hour.
-        if (failures < 5) return 0
-        val seconds = min(30.0 * 2.0.pow(failures - 5), 3600.0)
-        return now + (seconds * 1000).toLong()
+    /** Milliseconds until another password may be tried; 0 = now. */
+    suspend fun lockoutRemainingMs(): Long = withContext(Dispatchers.IO) { mutex.withLock { lockoutRemainingLocked() } }
+
+    private fun lockoutRemainingLocked(): Long {
+        val meta = _meta.value ?: return 0
+        val (ms, updated) = Lockout.remaining(meta, bootCount(), elapsed())
+        updated?.let { saveMeta(it) }
+        return ms
+    }
+
+    /**
+     * Every master-password check goes through here (caller holds [mutex]). Returns the master
+     * key on success; otherwise counts the failure, which may lock out or erase the vault.
+     */
+    private fun checkPasswordLocked(password: CharArray): Pair<ByteArray?, UnlockResult> {
+        val remaining = lockoutRemainingLocked()
+        if (remaining > 0) return null to UnlockResult.LockedOut(remaining)
+        val meta = requireNotNull(_meta.value)
+        val master = VaultCodec.unwrapMaster(password, meta)
+        if (master != null) {
+            if (meta.failedAttempts != 0 || meta.lockoutMs != 0L) saveMeta(Lockout.clear(meta))
+            // The password is proven here, so this is the safe moment to (re)create the key
+            // behind the "confirm it's you" fingerprint check (D-036).
+            BiometricKeys.ensureReauthKey()
+            return master to UnlockResult.Success
+        }
+        val updated = Lockout.fail(meta, bootCount(), elapsed())
+        if (meta.settings.wipeAfterFailures && updated.failedAttempts >= MAX_FAILED_ATTEMPTS) {
+            wipeLocked()
+            return null to UnlockResult.Wiped
+        }
+        saveMeta(updated)
+        return null to if (updated.lockoutMs > 0) {
+            UnlockResult.LockedOut(updated.lockoutMs)
+        } else {
+            UnlockResult.WrongPassword(
+                if (meta.settings.wipeAfterFailures) MAX_FAILED_ATTEMPTS - updated.failedAttempts else null,
+            )
+        }
     }
 
     private fun openFromDisk(master: ByteArray) {
@@ -219,14 +240,16 @@ class VaultRepository(
     }
 
     /**
-     * Returns false if [current] is wrong. Replaces the master key (see VaultCodec.rotateMaster)
-     * and turns fingerprint unlock off. Write order is crash-safe: see VaultStorage.
+     * Checks [current] like any password check (wrong answers count, D-034). Replaces the master
+     * key (see VaultCodec.rotateMaster) and turns fingerprint unlock off. Write order is
+     * crash-safe: see VaultStorage.
      */
-    suspend fun changePassword(current: CharArray, new: CharArray): Boolean = withContext(Dispatchers.Default) {
+    suspend fun changePassword(current: CharArray, new: CharArray): UnlockResult = withContext(Dispatchers.Default) {
         mutex.withLock {
-            val meta = requireNotNull(_meta.value)
             val items = (state.value as? VaultState.Unlocked)?.items ?: error("Vault is locked")
-            val oldMaster = VaultCodec.unwrapMaster(current, meta) ?: return@withLock false
+            val (oldMaster, result) = checkPasswordLocked(current)
+            if (oldMaster == null) return@withLock result
+            val meta = requireNotNull(_meta.value)
             val oldKeys = VaultKeys.fromMaster(oldMaster)
             try {
                 val r = VaultCodec.rotateMaster(meta, items, oldKeys, new)
@@ -242,7 +265,7 @@ class VaultRepository(
                 oldKeys.wipe()
                 oldMaster.fill(0)
             }
-            true
+            UnlockResult.Success
         }
     }
 
@@ -262,20 +285,27 @@ class VaultRepository(
         }
     }
 
-    fun readBackup(input: InputStream): BackupFile =
-        VaultCodec.parseBackup(input.use { String(it.readBytes(), Charsets.UTF_8) })
+    /** Throws IllegalArgumentException with a message for the user if the file is unusable. */
+    suspend fun readBackup(input: InputStream): BackupFile = withContext(Dispatchers.IO) {
+        VaultCodec.parseBackup(input.use { VaultCodec.readBackupText(it) })
+    }
 
     /**
      * First-time restore: the backup becomes this phone's vault, and its password becomes the
      * master password. Returns false if the password is wrong.
+     *
+     * The key is wrapped again with this app's own Argon2 settings, not the ones written in
+     * the file, so a crafted backup can't leave the vault on weak settings (D-035).
      */
     suspend fun restoreAsNewVault(backup: BackupFile, password: CharArray): Boolean = withContext(Dispatchers.Default) {
         mutex.withLock {
             val opened = VaultCodec.openBackup(backup, password) ?: return@withLock false
-            val meta = VaultMeta(kdf = backup.kdf, salt = backup.salt, wrappedKey = backup.wrappedKey)
+            val meta = VaultCodec.rewrap(VaultMeta(kdf = KdfParams(), salt = "", wrappedKey = ""), opened.masterKey, password)
+            storage.discardPendingData()
             storage.writeData(backup.data.fromB64())
             storage.writeMeta(meta)
             _meta.value = meta
+            BiometricKeys.ensureReauthKey()
             openSession(opened.masterKey, VaultKeys.fromMaster(opened.masterKey), opened.data)
             true
         }
@@ -310,6 +340,7 @@ class VaultRepository(
     private fun wipeLocked() {
         lock()
         BiometricKeys.deleteKey()
+        BiometricKeys.deleteReauthKey()
         storage.wipe()
         _meta.value = null
         _state.value = VaultState.NoVault

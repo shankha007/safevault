@@ -56,13 +56,14 @@ password-manager/
 | File | What it does |
 |---|---|
 | `Crypto.kt` | `Kdf` (Argon2id via Bouncy Castle), `Aead` (AES-256-GCM seal/open), `VaultKeys` (derives `fileKey` and `fieldKey` from the master key; seals the file and individual fields), `KdfParams`, base64 helpers. **Pure Kotlin, no Android imports**, so it's unit-testable. |
-| `BiometricKeys.kt` | Android Keystore key bound to strong biometrics. Creates the key (StrongBox if available), gives ciphers for BiometricPrompt, and wraps/unwraps the master key. |
+| `BiometricKeys.kt` | Android Keystore keys bound to strong biometrics. The unlock key (StrongBox if available) wraps/unwraps the master key; the reauth key proves a real fingerprint check for "confirm it's you" (D-036) and is made only after the master password was proven. |
 
 ### `data/`: vault model and storage
 | File | What it does |
 |---|---|
 | `Models.kt` | Serializable data: `VaultItem`, `LoginData`, `CardData`, `VaultData`, `VaultMeta` (plain header), `VaultSettings`, `BackupFile`. `Sealed` = a field-encrypted string. `Field` = field names used as encryption context. |
-| `VaultCodec.kt` | **Pure Kotlin** format logic: create a vault, wrap/unwrap the master key with a password, encrypt/decrypt the data file, make/parse/open backups, re-seal items under another key, merge items. Fully unit-tested. |
+| `Lockout.kt` | **Pure Kotlin** wrong-password lockout on the since-boot clock; restarts after a reboot (D-034). |
+| `VaultCodec.kt` | **Pure Kotlin** format logic: create a vault, wrap/unwrap the master key with a password, encrypt/decrypt the data file, make/parse/open backups (size and Argon2 limits, D-035), re-seal items under another key, merge items. Fully unit-tested. |
 | `VaultStorage.kt` | Reads/writes `vault.meta` and `vault.dat` atomically (`AtomicFile`) in `noBackupFilesDir`, plus `vault.dat.next`, which exists only during a master-key change (D-032). Overwrites the files before deleting them on wipe. |
 | `VaultRepository.kt` | The **single owner of vault state**. Exposes `state: StateFlow<VaultState>` (NoVault / Locked / Unlocked(items)) and `meta`. Handles create, unlock (password or biometric), lock, add/edit/delete, reveal/seal fields, settings, password change, backup export/import/restore, wipe, and the failed-attempt counter. Holds the keys only while unlocked. |
 
@@ -70,7 +71,7 @@ password-manager/
 | File | What it does |
 |---|---|
 | `AutoLock.kt` | `ProcessLifecycleOwner` observer. Locks when the app goes to the background (after the chosen delay) and after 5 minutes without a touch. Holds off while the system file picker is open. |
-| `SecureClipboard.kt` | Copies with the sensitive-content flag and clears after N seconds. |
+| `SecureClipboard.kt` | Copies with the sensitive-content flag and clears after N seconds; an alarm and `ClipboardClearReceiver` clear it if the app was killed first (D-038). |
 | `DeviceIntegrity.kt` | Best-effort root check, used for a warning only. |
 
 ### `util/`: helpers (pure Kotlin)
@@ -86,7 +87,7 @@ password-manager/
 |---|---|
 | `AppRoot.kt` | Top-level switch on `VaultState` (Setup / Unlock / unlocked app) and the in-memory back stack (`Screen`: Home, Detail, Edit, Generator, Settings). |
 | `Biometric.kt` | `biometricPrompt()` suspend wrapper around `BiometricPrompt`, plus `LocalActivity`. |
-| `Reauth.kt` | `ReauthController` + `ReauthHost`: "confirm it's you" for PIN/CVV (fingerprint, or master password dialog), with a 60-second grace period. |
+| `Reauth.kt` | `ReauthController` + `ReauthHost`: "confirm it's you" for PIN/CVV (Keystore-bound fingerprint, or master password dialog), with a 60-second grace period. |
 | `theme/Theme.kt` | Light and dark colour schemes, `BrandColors` (brand gradient), strength-meter colours. |
 | `components/Components.kt` | `PasswordField`, `StrengthMeter`, `ItemAvatar`, `FieldRow`, `ConfirmDialog`, `PasswordPromptDialog`, `BrandMark` (logo tile) and `brandBrush()` (D-026). `ItemAvatar` shows a brand logo tile when `brandOf(item)` finds one (D-028), otherwise the coloured letter / card icon. |
 | `screens/LockScreens.kt` | `SetupScreen` (create or restore a vault) and `UnlockScreen` (password, fingerprint, lockout countdown, root warning). Both show the logo and the SafeVault name. |
@@ -100,7 +101,7 @@ password-manager/
 | File | What it does |
 |---|---|
 | `SafeVaultApp.kt` | `Application`: creates `VaultRepository`, `AutoLock`, `SecureClipboard` (manual DI). |
-| `MainActivity.kt` | Sets `FLAG_SECURE`, edge-to-edge, provides `LocalActivity`, reports touches to `AutoLock`. |
+| `MainActivity.kt` | Sets `FLAG_SECURE` and `filterTouchesWhenObscured`, edge-to-edge, incognito keyboard for all fields (`IncognitoKeyboard`), provides `LocalActivity`, reports touches to `AutoLock`. |
 
 ---
 
@@ -122,7 +123,7 @@ master password ──Argon2id(salt, 46 MiB, t=2)──► KEK (256-bit)
 
 **`vault.meta`** (plain JSON, no secrets):
 `formatVersion, kdf{memoryKiB, iterations, parallelism}, salt, wrappedKey,
-biometricWrappedKey?, failedAttempts, lockoutUntil, settings{…}`
+biometricWrappedKey?, failedAttempts, lockoutMs, lockoutBoot, lockoutEndsAt, settings{…}`
 
 **`vault.dat`**: `IV(12) ‖ AES-256-GCM(fileKey, JSON(VaultData)) ‖ tag(16)`, AAD
 `safevault/file/v1`.
@@ -201,8 +202,11 @@ with the same key, or Android refuses the update.
 - `VaultCodecTest`: password wrap/unwrap, wrong password, encrypt/decrypt round trip, secrets
   stay sealed after the outer decrypt, tamper detection, field context binding, random IVs,
   password change, master-key rotation on password change (old backup + old password can't open
-  new data), backup round trip, invalid backup files, re-sealing, merge rules, Argon2
-  determinism.
+  new data), backup round trip, invalid backup files, hostile or weak Argon2 settings and
+  oversized files rejected, re-sealing, merge rules, Argon2 determinism.
+- `LockoutTest`: free mistakes, doubling delays and cap, countdown on the since-boot clock,
+  reboot restarts an unfinished lockout, finished lockouts are forgotten, missing boot count,
+  old `lockoutUntil` files still load.
 - `PasswordToolsTest`: generator length, character groups and uniqueness; strength ratings;
   word-plus-digits passwords rated Weak; master password policy (12+ characters, Strong).
 - `BrandMatcherTest`: name and website matching, longest match wins, no matches inside other
@@ -308,17 +312,24 @@ whole app, the release APK (aapt2/apksigner) and proof-of-concept unit tests.
 | Unit tests after fixes | 30/30 pass; `assembleRelease` ✔ |
 | Fixes on a device (Edit unlock button, Settings password prompts, password change then unlock) | not done: emulator UI too slow; check on the phone |
 
-Open low-severity findings, not fixed yet:
-- Unlock lockout uses the wall clock (changing the date skips it); the confirm-password dialogs
-  don't count wrong attempts.
-- Backup KDF settings and file size aren't bounded (a crafted file can crash the app); restore
-  adopts the backup's KDF settings.
-- The PIN/CVV fingerprint check isn't tied to a key (no `CryptoObject`), so hooking tools on a
-  rooted phone can skip it.
-- No `filterTouchesWhenObscured` (tapjacking on Android 8-11); `taskAffinity` not cleared
-  (task hijacking on Android < 11).
-- Notes, username and other plain fields don't ask the keyboard not to learn them.
-- Clipboard auto-clear is lost if Android kills the process first.
+Low-severity findings, fixed 2026-11-04:
+
+| Check | Result |
+|---|---|
+| L1 lockout skipped by changing the date; prompts didn't count wrong passwords | fixed (D-034), `LockoutTest` |
+| L2 hostile backup settings / huge file; restore kept the file's Argon2 settings | fixed (D-035), regression tests |
+| L3 "confirm it's you" fingerprint not tied to a key | fixed (D-036) |
+| L4 tapjacking on Android 8-11 | fixed (D-037) |
+| L5 task hijacking on Android < 11 | fixed: release APK has `taskAffinity=""` (D-037) |
+| L6 keyboard could learn notes, usernames, names | fixed (D-037) |
+| L7 clipboard not cleared if the app is killed | fixed (D-038); receiver is `exported=false` in the release APK |
+| Info: Keystore errors crashed the unlock screen; search text in saved state | fixed (D-038, D-037) |
+| Unit tests after fixes | 40/40 pass; `assembleRelease` ✔; still no INTERNET permission |
+| On a device: Keystore-bound prompt, incognito keyboard, overlay filter, clipboard alarm after force-stop, lockout across a date change and a reboot | not done: emulator UI too slow; check on the phone |
+
+Still open (by design or accepted): wiping overwrites files with zeros, which flash storage
+doesn't guarantee to erase (file-based encryption covers this); the vault stays unlocked up to
+3 minutes while the file picker is open (D-012).
 
 **Not yet tested:** fingerprint enrolment and unlock, import (merge) into an existing vault,
 change master password, the erase-after-10 setting, and a real phone.

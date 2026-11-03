@@ -55,14 +55,17 @@ import com.safevault.app.SafeVaultApp
 import com.safevault.app.crypto.BiometricKeys
 import com.safevault.app.data.BackupFile
 import com.safevault.app.data.MAX_FAILED_ATTEMPTS
+import com.safevault.app.data.UnlockResult
 import com.safevault.app.data.VaultRepository
 import com.safevault.app.ui.AuthOutcome
 import com.safevault.app.ui.LocalActivity
 import com.safevault.app.ui.biometricPrompt
 import com.safevault.app.ui.components.ConfirmDialog
+import com.safevault.app.ui.components.IgnoreObscuredTouches
 import com.safevault.app.ui.components.PasswordField
 import com.safevault.app.ui.components.PasswordPromptDialog
 import com.safevault.app.ui.components.StrengthMeter
+import com.safevault.app.ui.components.passwordCheckError
 import com.safevault.app.util.PasswordStrength
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -112,9 +115,11 @@ fun SettingsScreen(repo: VaultRepository, onBack: () -> Unit) {
     val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
         app.autoLock.externalActivityDone()
         if (uri == null) return@rememberLauncherForActivityResult
-        runCatching { repo.readBackup(context.contentResolver.openInputStream(uri)!!) }
-            .onSuccess { importing = it }
-            .onFailure { toast(it.message ?: "Couldn't read that file.") }
+        scope.launch {
+            runCatching { repo.readBackup(context.contentResolver.openInputStream(uri)!!) }
+                .onSuccess { importing = it }
+                .onFailure { toast((it as? IllegalArgumentException)?.message ?: "Couldn't read that file.") }
+        }
     }
 
     Scaffold(
@@ -272,9 +277,10 @@ fun SettingsScreen(repo: VaultRepository, onBack: () -> Unit) {
             message = "Enter your master password to continue.",
             confirmText = "Continue",
             onSubmit = { pw ->
-                val ok = repo.verifyPassword(pw)
+                val error = passwordCheckError(repo.verifyPassword(pw))
                 pw.fill(' ')
-                if (ok) { gate = null; action(); null } else "That password isn't right."
+                if (error == null) { gate = null; action() }
+                error
             },
             onDismiss = { gate = null },
         )
@@ -315,7 +321,9 @@ fun SettingsScreen(repo: VaultRepository, onBack: () -> Unit) {
             message = "Everything in SafeVault on this phone will be erased. This can't be undone. Enter your master password to confirm.",
             confirmText = "Delete everything",
             onSubmit = { pw ->
-                if (repo.verifyPassword(pw)) { deleteVault = false; repo.deleteVault(); null } else "That password isn't right."
+                val error = passwordCheckError(repo.verifyPassword(pw))
+                if (error == null) { deleteVault = false; repo.deleteVault() }
+                error
             },
             onDismiss = { deleteVault = false },
         )
@@ -338,6 +346,7 @@ private fun ChoiceDialog(title: String, choices: List<Pair<Int, String>>, curren
         onDismissRequest = onDismiss,
         title = { Text(title) },
         text = {
+            IgnoreObscuredTouches()
             Column {
                 choices.forEach { (value, label) ->
                     Row(
@@ -373,6 +382,7 @@ private fun ChangePasswordDialog(repo: VaultRepository, onDone: (Boolean) -> Uni
         onDismissRequest = { if (!busy) onDone(false) },
         title = { Text("Change master password") },
         text = {
+            IgnoreObscuredTouches()
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 PasswordField(current, { current = it; error = null }, "Current password", isError = error != null, supportingText = error)
                 PasswordField(new, { new = it }, "New password")
@@ -388,9 +398,10 @@ private fun ChangePasswordDialog(repo: VaultRepository, onDone: (Boolean) -> Uni
                 onClick = {
                     busy = true
                     scope.launch {
-                        val ok = repo.changePassword(current.toCharArray(), new.toCharArray())
+                        val r = repo.changePassword(current.toCharArray(), new.toCharArray())
                         busy = false
-                        if (ok) onDone(true) else error = "That isn't your current password."
+                        error = passwordCheckError(r)
+                        if (r == UnlockResult.Success) onDone(true)
                     }
                 },
             ) { Text("Change") }

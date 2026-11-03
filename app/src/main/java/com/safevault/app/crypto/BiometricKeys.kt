@@ -24,6 +24,8 @@ import javax.crypto.spec.GCMParameterSpec
  */
 object BiometricKeys {
     private const val ALIAS = "safevault_biometric_v1"
+    /** Separate key whose only job is to prove a real fingerprint check for "confirm it's you". */
+    private const val REAUTH_ALIAS = "safevault_reauth_v1"
     private const val TRANSFORMATION = "AES/GCM/NoPadding"
     private const val IV_BYTES = 12
 
@@ -33,13 +35,14 @@ object BiometricKeys {
     /** A fresh key and an encrypt-mode cipher to pass to BiometricPrompt. */
     fun encryptCipher(): Cipher {
         deleteKey()
-        val key = createKey()
+        val key = createKey(ALIAS)
         return Cipher.getInstance(TRANSFORMATION).apply { init(Cipher.ENCRYPT_MODE, key) }
     }
 
     /**
-     * A decrypt-mode cipher for [wrapped], or null if the key no longer exists or has been
-     * invalidated (for example because fingerprints changed).
+     * A decrypt-mode cipher for [wrapped], or null if the key no longer exists, has been
+     * invalidated (for example because fingerprints changed) or can't be used at all. Any of
+     * these turns fingerprint unlock off instead of crashing the unlock screen every launch.
      */
     fun decryptCipher(wrapped: String): Cipher? {
         return try {
@@ -49,6 +52,10 @@ object BiometricKeys {
                 init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(128, iv))
             }
         } catch (e: KeyPermanentlyInvalidatedException) {
+            deleteKey()
+            null
+        } catch (e: Exception) {
+            // Damaged blob, Keystore error after an OS update, and so on.
             deleteKey()
             null
         }
@@ -66,11 +73,54 @@ object BiometricKeys {
         runCatching { keyStore().deleteEntry(ALIAS) }
     }
 
+    /**
+     * Encrypt-mode cipher on the "confirm it's you" key, to pass to BiometricPrompt, or null
+     * when the check has to use the master password: no strong biometric, no key yet, or the
+     * fingerprints changed since the key was made (the key is then deleted).
+     */
+    fun reauthCipher(): Cipher? = try {
+        val key = keyStore().getKey(REAUTH_ALIAS, null) as? SecretKey
+        key?.let { Cipher.getInstance(TRANSFORMATION).apply { init(Cipher.ENCRYPT_MODE, it) } }
+    } catch (e: KeyPermanentlyInvalidatedException) {
+        deleteReauthKey()
+        null
+    } catch (e: Exception) {
+        null
+    }
+
+    /**
+     * True only if the Keystore itself accepts [cipher], which it does only right after a real
+     * strong-biometric check. A faked "succeeded" callback (hooking tools) doesn't pass this.
+     */
+    fun reauthProven(cipher: Cipher?): Boolean = cipher != null && runCatching { cipher.doFinal(ByteArray(16)) }.isSuccess
+
+    /**
+     * Makes sure the "confirm it's you" key exists and still works. Called only right after the
+     * master password was proven, so a fingerprint added later by someone else (which
+     * invalidates the key) can't get a new key without the master password (D-036).
+     */
+    fun ensureReauthKey() {
+        runCatching {
+            val key = keyStore().getKey(REAUTH_ALIAS, null) as? SecretKey
+            val usable = key != null && runCatching {
+                Cipher.getInstance(TRANSFORMATION).init(Cipher.ENCRYPT_MODE, key)
+            }.isSuccess
+            if (!usable) {
+                deleteReauthKey()
+                createKey(REAUTH_ALIAS) // fails without an enrolled fingerprint; that's fine
+            }
+        }
+    }
+
+    fun deleteReauthKey() {
+        runCatching { keyStore().deleteEntry(REAUTH_ALIAS) }
+    }
+
     private fun keyStore() = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
 
-    private fun createKey(): SecretKey {
+    private fun createKey(alias: String): SecretKey {
         fun spec(strongBox: Boolean): KeyGenParameterSpec {
-            val b = KeyGenParameterSpec.Builder(ALIAS, KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT)
+            val b = KeyGenParameterSpec.Builder(alias, KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT)
                 .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
                 .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
                 .setKeySize(256)

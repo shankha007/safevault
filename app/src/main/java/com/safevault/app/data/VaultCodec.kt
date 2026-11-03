@@ -10,6 +10,8 @@ import com.safevault.app.crypto.fromB64
 import com.safevault.app.crypto.randomBytes
 import com.safevault.app.crypto.toB64
 import kotlinx.serialization.json.Json
+import java.io.ByteArrayOutputStream
+import java.io.InputStream
 
 /**
  * Pure-Kotlin vault format logic (no Android classes), so it is covered by JVM unit tests.
@@ -124,7 +126,28 @@ object VaultCodec {
         }
         require(backup.format == BackupFile.BACKUP_FORMAT) { "This file isn't a SafeVault backup." }
         require(backup.formatVersion <= 1) { "This backup was made by a newer version of SafeVault." }
+        // Everything here comes from a file anyone could have written (D-035).
+        val wellFormed = backup.kdf.withinLimits() &&
+            runCatching { backup.salt.fromB64().size == 16 && backup.wrappedKey.fromB64().isNotEmpty() && backup.data.fromB64().isNotEmpty() }
+                .getOrDefault(false)
+        require(wellFormed) { "This backup file is damaged or wasn't made by SafeVault." }
         return backup
+    }
+
+    /** Biggest file accepted as a backup; a vault with thousands of items is a few MB. */
+    const val MAX_BACKUP_BYTES = 32 * 1024 * 1024
+
+    /** Reads a backup file as text, refusing anything over [limit] bytes before it fills memory. */
+    fun readBackupText(input: InputStream, limit: Int = MAX_BACKUP_BYTES): String {
+        val out = ByteArrayOutputStream()
+        val buf = ByteArray(64 * 1024)
+        while (true) {
+            val n = input.read(buf)
+            if (n < 0) break
+            out.write(buf, 0, n)
+            require(out.size() <= limit) { "This file is too big to be a SafeVault backup." }
+        }
+        return String(out.toByteArray(), Charsets.UTF_8)
     }
 
     class OpenedBackup(val masterKey: ByteArray, val data: VaultData)

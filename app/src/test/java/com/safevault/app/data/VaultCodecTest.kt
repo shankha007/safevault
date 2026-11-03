@@ -17,6 +17,8 @@ import org.junit.Test
 class VaultCodecTest {
     // Small KDF settings keep the tests fast; the format is the same.
     private val fastKdf = KdfParams(memoryKiB = 1024, iterations = 1, parallelism = 1)
+    // parseBackup refuses settings below the OWASP minimum (D-035), so backup tests use that.
+    private val backupKdf = KdfParams(memoryKiB = 19_456, iterations = 2, parallelism = 1)
     private val password = "correct horse battery staple".toCharArray()
 
     private fun sampleItem(keys: VaultKeys, id: String = "item-1", updatedAt: Long = 1L): VaultItem {
@@ -97,7 +99,7 @@ class VaultCodecTest {
 
     @Test
     fun backupRoundTrip() {
-        val vault = VaultCodec.createVault(password, fastKdf)
+        val vault = VaultCodec.createVault(password, backupKdf)
         val keys = VaultKeys.fromMaster(vault.masterKey)
         val data = VaultData(listOf(sampleItem(keys)))
         val text = VaultCodec.makeBackup(vault.meta, VaultCodec.encryptData(keys, data), now = 5L)
@@ -157,7 +159,7 @@ class VaultCodecTest {
 
     @Test
     fun passwordChangeRotatesMasterKey() {
-        val vault = VaultCodec.createVault(password, fastKdf)
+        val vault = VaultCodec.createVault(password, backupKdf)
         val oldKeys = VaultKeys.fromMaster(vault.masterKey)
         val oldBackup = VaultCodec.makeBackup(vault.meta, VaultCodec.encryptData(oldKeys, VaultData()), 0)
         val withBio = vault.meta.copy(biometricWrappedKey = "AAAA")
@@ -178,5 +180,33 @@ class VaultCodecTest {
         assertThrows(CryptoException::class.java) {
             VaultCodec.decryptData(VaultKeys.fromMaster(stolen.masterKey), r.encryptedData)
         }
+    }
+
+    private fun backupJson(kdf: String, salt: String = "AAAAAAAAAAAAAAAAAAAAAA==") =
+        """{"format":"safevault-backup","formatVersion":1,"createdAt":0,"kdf":$kdf,
+           "salt":"$salt","wrappedKey":"AAAA","data":"AAAA"}"""
+
+    @Test
+    fun hostileOrWeakBackupSettingsAreRejected() {
+        // VAPT L2: these parsed before, and the first one ran the phone out of memory.
+        for (kdf in listOf(
+            """{"memoryKiB":2147483647,"iterations":2,"parallelism":1}""",
+            """{"memoryKiB":47104,"iterations":2147483647,"parallelism":1}""",
+            """{"memoryKiB":47104,"iterations":2,"parallelism":255}""",
+            """{"memoryKiB":8,"iterations":1,"parallelism":1}""",
+        )) {
+            assertThrows(kdf, IllegalArgumentException::class.java) { VaultCodec.parseBackup(backupJson(kdf)) }
+        }
+        val ok = """{"memoryKiB":47104,"iterations":2,"parallelism":1}"""
+        assertNotNull(VaultCodec.parseBackup(backupJson(ok)))
+        assertThrows(IllegalArgumentException::class.java) { VaultCodec.parseBackup(backupJson(ok, salt = "AAAA")) }
+        assertThrows(IllegalArgumentException::class.java) { VaultCodec.parseBackup(backupJson(ok, salt = "%%%")) }
+    }
+
+    @Test
+    fun oversizedBackupFileIsRefusedWhileReading() {
+        val big = java.io.ByteArrayInputStream(ByteArray(2_000))
+        assertThrows(IllegalArgumentException::class.java) { VaultCodec.readBackupText(big, limit = 1_000) }
+        assertEquals("hi", VaultCodec.readBackupText("hi".byteInputStream(), limit = 1_000))
     }
 }

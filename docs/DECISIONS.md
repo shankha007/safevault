@@ -167,7 +167,7 @@ were used. Each one can be changed in the app's settings or with a small code ch
 ---
 
 ## D-010 · Brute-force protection: growing delays, optional wipe
-**Date:** 2026-10-28 · **Status:** Accepted
+**Date:** 2026-10-28 · **Status:** Accepted; timing and scope amended by D-034
 
 **Decision:** The first 4 wrong passwords have no delay (typos happen). From the 5th: 30 s,
 then 1 min, 2 min, 4 min, and so on, capped at 1 hour. The counter resets after a successful
@@ -211,15 +211,15 @@ to individual screens.
 ---
 
 ## D-013 · Clipboard handling
-**Date:** 2026-10-28 · **Status:** Accepted
+**Date:** 2026-10-28 · **Status:** Accepted; limitation fixed by D-038
 
 **Decision:** Copied values are tagged `EXTRA_IS_SENSITIVE`, which hides the preview on
 Android 13+ and keeps them out of clipboard history on keyboards that honour the flag. They
 are cleared after 30 s by default (configurable to 15 s, 1 min or 2 min).
 
 **Limitation:** The clear timer runs inside the app. If Android kills the app before the timer
-fires, the clipboard isn't cleared. A WorkManager job could fix this, but it adds a dependency
-for a rare case. Logged as a possible Phase 2 improvement.
+fires, the clipboard isn't cleared. ~~A WorkManager job could fix this, but it adds a dependency
+for a rare case. Logged as a possible Phase 2 improvement.~~ Fixed with an alarm backstop (D-038).
 
 ---
 
@@ -607,3 +607,107 @@ offline with no lockout.
 **Alternatives:** a bundled wordlist such as zxcvbn's (much bigger APK, and the shape rule
 catches the most common case); a 16-character minimum (harder to remember for little extra
 gain once patterns are caught).
+
+---
+
+## D-034 · Lockout timed on the since-boot clock, and every password check counts
+**Date:** 2026-11-04 · **Status:** Accepted (amends D-010)
+
+**Context:** VAPT finding L1. The lockout end was a wall-clock time, so moving the phone's date
+forward in Settings ended it at once. With auto-erase off (the default), that meant unlimited
+guessing on the unlock screen. The "confirm it's you" and Settings password prompts didn't
+count wrong answers at all.
+
+**Decision:**
+- `Lockout` (pure Kotlin, unit-tested) times lockouts on `SystemClock.elapsedRealtime()`,
+  which Settings can't change. `vault.meta` stores the lockout length, the Android boot count
+  (`Settings.Global.BOOT_COUNT`) and the end time on that clock. The old `lockoutUntil` field is
+  ignored when an older file is read.
+- That clock restarts at boot, so after a reboot an unfinished lockout **restarts in full**
+  rather than ending. A finished lockout is forgotten as soon as the app notices, so a later
+  reboot doesn't bring it back.
+- Unlock, every master-password prompt (confirm it's you, Settings actions, delete vault) and
+  change password share one check (`VaultRepository.checkPasswordLocked`): same counter, same
+  delays, same auto-erase.
+
+**Trade-off:** someone who rebooted during a lockout waits the whole lockout again. That only
+happens after 5 wrong passwords in a row without a correct one.
+
+---
+
+## D-035 · Backup files are treated as untrusted input
+**Date:** 2026-11-04 · **Status:** Accepted (amends D-017)
+
+**Context:** VAPT finding L2. A backup's Argon2 settings, salt and size weren't checked: a file
+with `memoryKiB` near 2^31 crashed the app, the whole file was read into memory on the main
+thread, and restoring a backup kept whatever Argon2 settings it named (even very weak ones).
+
+**Decision:**
+- `parseBackup` accepts only memory 19-256 MiB, 2-10 iterations and parallelism 1-4
+  (`KdfParams.withinLimits`; the lower end is the OWASP minimum), a 16-byte salt and valid
+  base64 fields.
+- `readBackupText` stops at 32 MB; reading runs on the IO dispatcher.
+- Restore wraps the master key again with the app's own default settings and a fresh salt,
+  so the restored vault never keeps the file's settings.
+
+---
+
+## D-036 · "Confirm it's you" fingerprint check is tied to a Keystore key
+**Date:** 2026-11-04 · **Status:** Accepted (amends D-018)
+
+**Context:** VAPT finding L3. The PIN/CVV fingerprint prompt only listened for "succeeded".
+On a rooted phone, hooking tools can fake that callback.
+
+**Decision:** a second Keystore key (`safevault_reauth_v1`, same settings as the unlock key in
+D-008: strong biometric for every use, invalidated when a fingerprint is added). The prompt is
+given a cipher on that key, and the check passes only if the Keystore then accepts the cipher,
+which it does only after a real fingerprint check.
+
+The key is made (or remade) only right after the master password was proven: creating the
+vault, restoring, or any correct master-password check. A fingerprint someone adds later
+invalidates it, and the check falls back to the master password until the key is remade.
+Existing installs get the key the first time the master password is typed after updating.
+
+**Limitation:** on a rooted phone an attacker can still read memory while the vault is open;
+this raises the bar, it doesn't make root safe (D-010).
+
+---
+
+## D-037 · Window and keyboard hardening
+**Date:** 2026-11-04 · **Status:** Accepted (amends D-011, D-014)
+
+VAPT findings L4-L6, plus one informational item:
+- **Tapjacking:** `filterTouchesWhenObscured` on the activity window and, through
+  `IgnoreObscuredTouches()`, on every dialog window (each dialog is its own window). Taps that
+  pass through another app's overlay are ignored. Android 12+ already blocks untrusted
+  overlays; this covers 8-11. Side effect: with some screen-dimming or chat-head apps active,
+  taps in SafeVault may be ignored until the overlay is closed.
+- **Task hijacking (StrandHogg):** `android:taskAffinity=""` on `MainActivity`, so another
+  app's activity can't be placed into SafeVault's task on Android < 11.
+- **Keyboard learning:** every text field asks the keyboard not to learn what's typed
+  (`IME_FLAG_NO_PERSONALIZED_LEARNING`, Gboard's incognito mode), added through Compose's
+  `InterceptPlatformTextInput` around the whole app. Covers notes, usernames and names, which
+  used normal keyboards.
+- **Search text** on Home moved from `rememberSaveable` to `remember`: it can name items, and
+  the activity already isn't recreated on configuration changes (D-014).
+
+---
+
+## D-038 · Clipboard clear survives the app being killed
+**Date:** 2026-11-04 · **Status:** Accepted (fixes the D-013 limitation)
+
+**Context:** VAPT finding L7. The clear timer was a coroutine; if Android killed the app first,
+the copied secret stayed on the clipboard.
+
+**Decision:** each copy also sets an `AlarmManager` alarm (`setAndAllowWhileIdle`, since-boot
+clock) 5 s after the timer. `ClipboardClearReceiver` (not exported; reachable only through the
+app's own immutable `PendingIntent`) clears the clipboard. The alarm is cancelled when the
+in-app timer runs. No new permission or library.
+
+**Limits:** the receiver runs in the background, where Android doesn't allow reading the
+clipboard, so it clears it even if the user has copied something else since. Inexact alarms
+can be late in deep Doze; Android 13+ also clears the clipboard on its own after about an hour.
+
+**Also fixed (informational):** `BiometricKeys.decryptCipher` now turns fingerprint unlock off
+on any Keystore error, not only "fingerprints changed". Before, other errors crashed the
+unlock screen, which opens the fingerprint prompt by itself on every launch.

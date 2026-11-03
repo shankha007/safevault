@@ -94,7 +94,12 @@ data class VaultMeta(
     /** Master key encrypted with the fingerprint-bound Android Keystore key, if enabled. */
     val biometricWrappedKey: String? = null,
     val failedAttempts: Int = 0,
-    val lockoutUntil: Long = 0,
+    /** Current lockout length; 0 = none. Timed on the since-boot clock, see Lockout (D-034). */
+    val lockoutMs: Long = 0,
+    /** Android boot count when [lockoutEndsAt] was set. */
+    val lockoutBoot: Int = 0,
+    /** SystemClock.elapsedRealtime() at which the lockout ends, on boot [lockoutBoot]. */
+    val lockoutEndsAt: Long = 0,
     val settings: VaultSettings = VaultSettings(),
 )
 

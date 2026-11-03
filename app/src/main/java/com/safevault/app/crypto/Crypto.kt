@@ -36,7 +36,14 @@ data class KdfParams(
     val memoryKiB: Int = 47_104, // 46 MiB
     val iterations: Int = 2,
     val parallelism: Int = 1,
-)
+) {
+    /**
+     * Settings read from a backup file must fall in this range (D-035): no weaker than the
+     * OWASP minimum, and not so heavy that opening the file runs the phone out of memory.
+     */
+    fun withinLimits(): Boolean =
+        memoryKiB in 19_456..262_144 && iterations in 2..10 && parallelism in 1..4
+}
 
 object Kdf {
     /** Turns the master password into a 256-bit key-encryption key. */
