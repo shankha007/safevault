@@ -154,4 +154,29 @@ class VaultCodecTest {
         assertArrayEquals(k1, k1b)
         assertFalse(k1.contentEquals(k2))
     }
+
+    @Test
+    fun passwordChangeRotatesMasterKey() {
+        val vault = VaultCodec.createVault(password, fastKdf)
+        val oldKeys = VaultKeys.fromMaster(vault.masterKey)
+        val oldBackup = VaultCodec.makeBackup(vault.meta, VaultCodec.encryptData(oldKeys, VaultData()), 0)
+        val withBio = vault.meta.copy(biometricWrappedKey = "AAAA")
+
+        val newPassword = "new purple tractor lamp".toCharArray()
+        val r = VaultCodec.rotateMaster(withBio, listOf(sampleItem(oldKeys)), oldKeys, newPassword)
+
+        assertFalse(vault.masterKey.contentEquals(r.masterKey))
+        assertNull(r.meta.biometricWrappedKey)
+        assertNull(VaultCodec.unwrapMaster(password, r.meta))
+        assertArrayEquals(r.masterKey, VaultCodec.unwrapMaster(newPassword, r.meta))
+        // Secrets survive, now sealed under the new key.
+        val data = VaultCodec.decryptData(r.keys, r.encryptedData)
+        assertEquals("hunter2!", r.keys.openField(data.items[0].login!!.password!!, Field.context("item-1", Field.PASSWORD)))
+
+        // VAPT M3: an old backup plus the old password must not open data written after the change.
+        val stolen = VaultCodec.openBackup(VaultCodec.parseBackup(oldBackup), password)!!
+        assertThrows(CryptoException::class.java) {
+            VaultCodec.decryptData(VaultKeys.fromMaster(stolen.masterKey), r.encryptedData)
+        }
+    }
 }

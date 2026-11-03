@@ -86,6 +86,7 @@ object PasswordStrength {
         }
         var bits = entropyBits(pw)
         if (hasSequence(lower)) bits -= 15
+        wordPlusSuffixBits(pw)?.let { bits = minOf(bits, it) }
         return when {
             bits < 28 -> Strength.VERY_WEAK
             bits < 45 -> Strength.WEAK
@@ -94,6 +95,31 @@ object PasswordStrength {
             else -> Strength.VERY_STRONG
         }
     }
+
+    /**
+     * "Mumbai@123", "India@2024", "Summer2024": one short word with digits or symbols around
+     * it. Cracking wordlists try exactly this shape first, so it is scored as a dictionary word
+     * (~20 bits) plus a few bits per extra character, whatever the character-set count says.
+     * Returns null when the password doesn't have that shape.
+     */
+    private fun wordPlusSuffixBits(pw: String): Double? {
+        val m = Regex("^([^A-Za-z]*)([A-Za-z]+)([^A-Za-z]*)$").matchEntire(pw) ?: return null
+        val (prefix, word, suffix) = m.destructured
+        if (word.length > 10) return null
+        return 20.0 + (prefix.length + suffix.length) * 4.0
+    }
+
+    /**
+     * Why [pw] can't be a master password, or null if it can. Stricter than the meter for
+     * item passwords: the master password is the one thing an offline attacker can guess at.
+     */
+    fun masterPasswordProblem(pw: String): String? = when {
+        pw.length < MASTER_MIN_LENGTH -> "Use at least $MASTER_MIN_LENGTH characters. A phrase of 3 or 4 unrelated words works well."
+        evaluate(pw).score < Strength.STRONG.score -> "This password is too easy to guess. Try a phrase of 3 or 4 unrelated words."
+        else -> null
+    }
+
+    const val MASTER_MIN_LENGTH = 12
 
     private fun hasSequence(s: String): Boolean {
         val runs = listOf("abcdefghijklmnopqrstuvwxyz", "0123456789", "qwertyuiop", "asdfghjkl", "zxcvbnm")

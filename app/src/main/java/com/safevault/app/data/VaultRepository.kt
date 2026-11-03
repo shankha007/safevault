@@ -1,6 +1,7 @@
 package com.safevault.app.data
 
 import com.safevault.app.crypto.BiometricKeys
+import com.safevault.app.crypto.CryptoException
 import com.safevault.app.crypto.VaultKeys
 import com.safevault.app.crypto.fromB64
 import kotlinx.coroutines.Dispatchers
@@ -139,7 +140,16 @@ class VaultRepository(
 
     private fun openFromDisk(master: ByteArray) {
         val k = VaultKeys.fromMaster(master)
-        val data = VaultCodec.decryptData(k, storage.readData())
+        val data = try {
+            VaultCodec.decryptData(k, storage.readData())
+        } catch (e: CryptoException) {
+            // A password change crashed after writing the new meta but before swapping in
+            // the new data: the staged file is the one this key opens. Finish the swap.
+            val pending = storage.readPendingData() ?: throw e
+            VaultCodec.decryptData(k, pending).also { storage.commitPendingData() }
+        }
+        // A change that crashed before its commit point left a staged file nobody can use.
+        storage.discardPendingData()
         openSession(master, k, data)
     }
 
@@ -208,15 +218,29 @@ class VaultRepository(
         _meta.value?.let { saveMeta(it.copy(biometricWrappedKey = null)) }
     }
 
-    /** Returns false if [current] is wrong. */
+    /**
+     * Returns false if [current] is wrong. Replaces the master key (see VaultCodec.rotateMaster)
+     * and turns fingerprint unlock off. Write order is crash-safe: see VaultStorage.
+     */
     suspend fun changePassword(current: CharArray, new: CharArray): Boolean = withContext(Dispatchers.Default) {
         mutex.withLock {
             val meta = requireNotNull(_meta.value)
-            val master = VaultCodec.unwrapMaster(current, meta) ?: return@withLock false
+            val items = (state.value as? VaultState.Unlocked)?.items ?: error("Vault is locked")
+            val oldMaster = VaultCodec.unwrapMaster(current, meta) ?: return@withLock false
+            val oldKeys = VaultKeys.fromMaster(oldMaster)
             try {
-                saveMeta(VaultCodec.rewrap(meta, master, new))
+                val r = VaultCodec.rotateMaster(meta, items, oldKeys, new)
+                storage.writePendingData(r.encryptedData)
+                saveMeta(r.meta) // commit point
+                storage.commitPendingData()
+                BiometricKeys.deleteKey()
+                // Swap the session to the new keys without passing through Locked.
+                keys?.wipe()
+                masterKey?.fill(0)
+                openSession(r.masterKey, r.keys, VaultData(r.items))
             } finally {
-                master.fill(0)
+                oldKeys.wipe()
+                oldMaster.fill(0)
             }
             true
         }

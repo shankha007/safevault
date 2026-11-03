@@ -116,13 +116,14 @@ your phone, we can tune it. Logged as a follow-up.
 ---
 
 ## D-007 · Random master key, wrapped by the password
-**Date:** 2026-10-28 · **Status:** Accepted
+**Date:** 2026-10-28 · **Status:** Accepted; password change amended by D-032
 
 **Decision:** The vault is encrypted with a random 256-bit master key. The master password
 (through Argon2id) only wraps (encrypts) that key.
 
 **Why:**
-- Changing the master password re-wraps 32 bytes; the vault data never needs re-encrypting.
+- ~~Changing the master password re-wraps 32 bytes; the vault data never needs re-encrypting.~~
+  Superseded by D-032: a password change now replaces the master key too.
 - Fingerprint unlock can wrap the same master key a second way (D-008).
 - The master key comes from `SecureRandom`, so it's full-strength even when the password is
   weaker.
@@ -289,7 +290,7 @@ password change.
 ---
 
 ## D-019 · Master password rules
-**Date:** 2026-10-28 · **Status:** Accepted
+**Date:** 2026-10-28 · **Status:** Superseded by D-033
 
 **Decision:** At least 8 characters and rated "Fair" or better by the built-in strength meter,
 which rejects common passwords and simple sequences. The user must tick "I understand it
@@ -526,3 +527,83 @@ the material consistent and lets it be regenerated after UI changes.
 
 **Limits:** same as D-029. The material shows the HTML preview and mock-ups, not the APK.
 
+---
+
+## D-031 · Sensitive actions ask again, even while unlocked
+**Date:** 2026-11-04 · **Status:** Accepted
+
+**Context:** a security test (VAPT) on 2026-11-03 found two ways round the protections for
+someone holding the phone while the vault was open:
+- **M1:** the Edit screen decrypted the CVV and PIN into its fields, with a Show button, and
+  never asked "confirm it's you". That made the check on the Detail screen (D-018) pointless.
+- **M2:** Settings let anyone export a backup (something to crack offline, with no lockout),
+  turn on fingerprint unlock, or turn off the PIN/CVV check or auto-erase, without the
+  master password. Fingerprint unlock was the worst: a person who knows the phone PIN can
+  add their own finger in Android settings, then switch SafeVault's fingerprint unlock off
+  and on. The new Keystore key is made after their finger is enrolled, so it isn't
+  invalidated (D-008), and their finger opens the vault from then on.
+
+**Decision:**
+- Edit screen: when the PIN/CVV check is on, an existing card's CVV and PIN stay sealed. A
+  **Show PIN and CVV to change them** button runs the same `ReauthController.confirm` as
+  the Detail screen. Saving without unlocking keeps the stored values unchanged.
+- Settings: these need the **master password** (not the fingerprint, because the attacker's
+  finger may be the enrolled one): Export encrypted backup, turning fingerprint unlock on,
+  turning the PIN/CVV check off, turning auto-erase off, and making auto-lock slower.
+  Changes that make the vault safer (locking sooner, turning checks on) don't ask.
+
+**Alternatives:** fingerprint-or-password like `ReauthController` (rejected for the reasons
+above); asking for the password every time Settings opens (annoying, and it doesn't protect
+Edit).
+
+---
+
+## D-032 · A password change replaces the master key
+**Date:** 2026-11-04 · **Status:** Accepted (amends D-007)
+
+**Context:** VAPT finding **M3**. A password change only re-wrapped the same master key. Anyone
+with an old backup and the old password got that key, and it opened every backup made
+after the change. Changing a leaked password didn't lock them out.
+
+**Decision:** `VaultCodec.rotateMaster` makes a new random master key, re-seals every secret
+field under the new field key (`resealItem`), re-encrypts the file, and wraps the new key with
+the new password (fresh salt). Fingerprint unlock wrapped the old key, so it's turned off
+and its Keystore key deleted; the user turns it on again.
+
+**Crash safety:** both files change, so the order matters (`VaultStorage`):
+1. write the new data to `vault.dat.next`;
+2. write `vault.meta` (the commit point);
+3. rename `vault.dat.next` over `vault.dat`.
+
+On unlock, if `vault.dat` doesn't open with the key, `vault.dat.next` is tried and, if it opens,
+renamed into place (crash between 2 and 3). A leftover `vault.dat.next` after a normal unlock
+is deleted (crash before 2: the old password still works and the old data is intact).
+
+**Still true:** old backups still open with the old password, but they hold only what was in
+the vault back then. The app tells the user to export a new backup.
+
+**Alternatives:** leave it (the attack needs an old backup plus the old password, but that's
+exactly when people change passwords); re-encrypt only the outer file (field keys would still
+be shared with old backups).
+
+---
+
+## D-033 · Master password rules (replaces D-019)
+**Date:** 2026-11-04 · **Status:** Accepted
+
+**Context:** VAPT finding **M4**. The meter only counted character types, so "Mumbai@123" and
+"India@2024" were rated Strong and "Rahul@123" was accepted. That shape (one word plus digits
+and symbols) is the first thing cracking tools try, and an exported backup can be attacked
+offline with no lockout.
+
+**Decision:**
+- The strength meter scores "one word of up to 10 letters with digits or symbols before or
+  after it" as about 20 bits plus 4 per extra character, so those are now Weak.
+- A new master password (create vault or change password) needs **at least 12 characters and
+  a "Strong" rating** (`PasswordStrength.masterPasswordProblem`). A phrase of 3 or 4 unrelated
+  words passes easily. The "I understand it can't be recovered" tick stays.
+- Existing vaults keep their password; the rule applies only when one is set.
+
+**Alternatives:** a bundled wordlist such as zxcvbn's (much bigger APK, and the shape rule
+catches the most common case); a 16-character minimum (harder to remember for little extra
+gain once patterns are caught).

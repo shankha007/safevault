@@ -49,8 +49,9 @@ Open SafeVault
 ```
 
 **Choosing a master password:** use a short sentence you'll remember, for example four or
-five unrelated words. The app won't accept anything shorter than 8 characters, or anything
-it rates "Weak". **If you forget it, nobody can recover your data.**
+five unrelated words. The app needs at least 12 characters rated "Strong". A single word
+with numbers or symbols added ("Mumbai@123") isn't accepted, because that's the first thing
+password-cracking tools try. **If you forget it, nobody can recover your data.**
 
 ---
 
@@ -151,6 +152,8 @@ Open SafeVault ──► Vault locked
 From an item's page:
 - ⭐ adds or removes it from favourites
 - ✏ edits it. If you leave with unsaved changes, the app asks before discarding them.
+  For a card, the CVV and PIN stay hidden until you tap **Show PIN and CVV to change them**
+  and confirm it's you, just like on the card's page.
 - 🗑 deletes it, after you confirm
 
 ---
@@ -174,12 +177,17 @@ Open it from the 🔑 icon on the home screen, or from ✨ while editing a passw
 | Clear copied passwords | When the clipboard is wiped after copying | 30 seconds |
 | Confirm before showing PIN and CVV | Asks for your fingerprint again for card secrets | On |
 | Erase after 10 wrong passwords | Wipes the vault if someone keeps guessing | Off |
-| Change master password | Needs your current password | — |
+| Change master password | Needs your current password. Turns fingerprint unlock off (turn it on again) | — |
 | Export encrypted backup | Saves a `.svault` file wherever you choose | — |
 | Import from backup | Merges items from a `.svault` file | — |
 | Delete vault | Erases everything on this phone (asks for your master password) | — |
 
 The vault also locks by itself after **5 minutes without a touch**, even with the app open.
+
+**Some changes ask for your master password**, even though the vault is open: exporting a
+backup, turning on fingerprint unlock, turning off the PIN/CVV check or auto-erase, and making
+auto-lock slower. That way someone who picks up your unlocked phone can't weaken your vault
+or copy it. Changes that make the vault safer don't ask.
 
 ---
 
@@ -194,7 +202,8 @@ is gone unless you have a backup.
 3. Copy that file somewhere off the phone, such as your PC or a pen drive.
 
 The backup is encrypted. It opens only with the master password you had **when you made it**.
-If you change your master password later, make a new backup.
+If you change your master password later, make a new backup. Old backups still open with
+the old password, but they only contain what was in the vault when they were made.
 
 **Restoring on a new phone:** install SafeVault, then on the first screen tap **Restore from a
 backup file**.

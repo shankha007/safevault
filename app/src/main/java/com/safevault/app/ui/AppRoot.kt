@@ -84,6 +84,7 @@ private fun UnlockedApp(repo: VaultRepository) {
         }
         is Screen.Edit -> EditScreen(
             repo = repo,
+            reauth = reauth,
             existing = screen.id?.let { id -> items.firstOrNull { it.id == id } },
             newType = screen.type,
             onDone = { savedId ->

@@ -60,6 +60,22 @@ object VaultCodec {
         return meta.copy(salt = salt.toB64(), wrappedKey = wrapMaster(master, newPassword, salt, meta.kdf))
     }
 
+    class Rotated(val meta: VaultMeta, val masterKey: ByteArray, val keys: VaultKeys, val items: List<VaultItem>, val encryptedData: ByteArray)
+
+    /**
+     * Password change: a brand-new master key, every secret re-sealed under it, wrapped with
+     * [newPassword] (fresh salt). An old backup and the old password then reveal only the old
+     * key, which opens nothing written after the change. Fingerprint unlock wraps the old key,
+     * so it is turned off.
+     */
+    fun rotateMaster(meta: VaultMeta, items: List<VaultItem>, oldKeys: VaultKeys, newPassword: CharArray): Rotated {
+        val master = randomBytes(KEY_BYTES)
+        val keys = VaultKeys.fromMaster(master)
+        val resealed = items.map { resealItem(it, oldKeys, keys) }
+        val newMeta = rewrap(meta, master, newPassword).copy(biometricWrappedKey = null)
+        return Rotated(newMeta, master, keys, resealed, encryptData(keys, VaultData(resealed)))
+    }
+
     private fun wrapMaster(master: ByteArray, password: CharArray, salt: ByteArray, kdf: KdfParams): String {
         val kek = Kdf.derive(password, salt, kdf)
         try {

@@ -4,20 +4,24 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedButton
@@ -49,6 +53,8 @@ import com.safevault.app.data.ItemType
 import com.safevault.app.data.LoginData
 import com.safevault.app.data.VaultItem
 import com.safevault.app.data.VaultRepository
+import com.safevault.app.ui.LocalActivity
+import com.safevault.app.ui.ReauthController
 import com.safevault.app.ui.components.ConfirmDialog
 import com.safevault.app.ui.components.PasswordField
 import com.safevault.app.ui.components.StrengthMeter
@@ -75,14 +81,31 @@ private class Draft(repo: VaultRepository, existing: VaultItem?, type: ItemType,
     var kind by mutableStateOf(existing?.card?.kind ?: CardKind.DEBIT)
     // Digits only ("1227"); the slash is drawn by ExpiryTransformation and added back on save.
     var expiry by mutableStateOf(CardUtils.expiryToDigits(existing?.card?.expiry ?: ""))
-    var cvv by mutableStateOf(repo.reveal(existing?.card?.cvv, id, Field.CVV))
-    var pin by mutableStateOf(repo.reveal(existing?.card?.pin, id, Field.PIN))
+    // PIN and CVV stay sealed until they pass the same check as on the Detail screen;
+    // otherwise Edit would be a way round it (D-031).
+    var cardSecretsLocked by mutableStateOf(
+        repo.settings.reauthForCardSecrets && (existing?.card?.cvv != null || existing?.card?.pin != null),
+    )
+        private set
+    var cvv by mutableStateOf(if (cardSecretsLocked) "" else repo.reveal(existing?.card?.cvv, id, Field.CVV))
+    var pin by mutableStateOf(if (cardSecretsLocked) "" else repo.reveal(existing?.card?.pin, id, Field.PIN))
+    private var initialCvv = cvv
+    private var initialPin = pin
 
     val type = existing?.type ?: type
     private val initial = snapshot()
 
-    private fun snapshot() = listOf(name, favorite, notes, username, password, url, bank, holder, number, kind, expiry, cvv, pin).hashCode()
-    val changed get() = snapshot() != initial
+    private fun snapshot() = listOf(name, favorite, notes, username, password, url, bank, holder, number, kind, expiry).hashCode()
+    val changed get() = snapshot() != initial || cvv != initialCvv || pin != initialPin
+
+    /** Call only after the user passed ReauthController.confirm. */
+    fun unlockCardSecrets(repo: VaultRepository, existing: VaultItem) {
+        cvv = repo.reveal(existing.card?.cvv, id, Field.CVV)
+        pin = repo.reveal(existing.card?.pin, id, Field.PIN)
+        initialCvv = cvv
+        initialPin = pin
+        cardSecretsLocked = false
+    }
 
     fun clear() {
         password = ""; number = ""; cvv = ""; pin = ""; notes = ""
@@ -93,10 +116,12 @@ private class Draft(repo: VaultRepository, existing: VaultItem?, type: ItemType,
 @Composable
 fun EditScreen(
     repo: VaultRepository,
+    reauth: ReauthController,
     existing: VaultItem?,
     newType: ItemType,
     onDone: (savedId: String?) -> Unit,
 ) {
+    val activity = LocalActivity.current
     val scope = rememberCoroutineScope()
     val draft = remember(existing?.id) { Draft(repo, existing, newType, existing?.id ?: repo.newItemId()) }
     var confirmDiscard by remember { mutableStateOf(false) }
@@ -155,8 +180,9 @@ fun EditScreen(
                 network = CardUtils.detectNetwork(cardNumberDigits),
                 kind = draft.kind,
                 expiry = expiryText,
-                cvv = repo.seal(draft.cvv, id, Field.CVV),
-                pin = repo.seal(draft.pin, id, Field.PIN),
+                // Still locked: keep the stored values exactly as they are.
+                cvv = if (draft.cardSecretsLocked) existing?.card?.cvv else repo.seal(draft.cvv, id, Field.CVV),
+                pin = if (draft.cardSecretsLocked) existing?.card?.pin else repo.seal(draft.pin, id, Field.PIN),
             ) else null,
         )
         scope.launch {
@@ -260,15 +286,32 @@ fun EditScreen(
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, autoCorrectEnabled = false),
                         modifier = Modifier.weight(1f),
                     )
+                    if (!draft.cardSecretsLocked) {
+                        PasswordField(
+                            value = draft.cvv, onValueChange = { v -> draft.cvv = v.filter { it.isDigit() }.take(4) },
+                            label = "CVV", keyboardType = KeyboardType.Number, modifier = Modifier.weight(1f),
+                        )
+                    }
+                }
+                if (draft.cardSecretsLocked) {
+                    OutlinedButton(
+                        onClick = {
+                            scope.launch {
+                                if (existing != null && reauth.confirm(activity, "PIN and CVV")) draft.unlockCardSecrets(repo, existing)
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Icon(Icons.Outlined.Lock, null)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Show PIN and CVV to change them")
+                    }
+                } else {
                     PasswordField(
-                        value = draft.cvv, onValueChange = { v -> draft.cvv = v.filter { it.isDigit() }.take(4) },
-                        label = "CVV", keyboardType = KeyboardType.Number, modifier = Modifier.weight(1f),
+                        value = draft.pin, onValueChange = { v -> draft.pin = v.filter { it.isDigit() }.take(6) },
+                        label = "ATM / card PIN", keyboardType = KeyboardType.Number,
                     )
                 }
-                PasswordField(
-                    value = draft.pin, onValueChange = { v -> draft.pin = v.filter { it.isDigit() }.take(6) },
-                    label = "ATM / card PIN", keyboardType = KeyboardType.Number,
-                )
             }
 
             OutlinedTextField(

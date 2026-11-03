@@ -64,7 +64,6 @@ import com.safevault.app.ui.components.PasswordField
 import com.safevault.app.ui.components.PasswordPromptDialog
 import com.safevault.app.ui.components.StrengthMeter
 import com.safevault.app.util.PasswordStrength
-import com.safevault.app.util.Strength
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -92,6 +91,14 @@ fun SettingsScreen(repo: VaultRepository, onBack: () -> Unit) {
     val canBiometric = remember { BiometricKeys.isAvailable(activity) }
 
     fun toast(msg: String) = scope.launch { snackbar.showSnackbar(msg) }
+
+    // Actions that weaken protection or let the vault leave the phone ask for the master
+    // password even while unlocked, so someone holding the open phone can't do them (D-031).
+    // Never the fingerprint: a finger the attacker enrolled must not be enough.
+    var gate by remember { mutableStateOf<Pair<String, () -> Unit>?>(null) }
+    fun withPassword(title: String, action: () -> Unit) {
+        gate = title to action
+    }
 
     val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri: Uri? ->
         app.autoLock.externalActivityDone()
@@ -130,7 +137,7 @@ fun SettingsScreen(repo: VaultRepository, onBack: () -> Unit) {
                         Switch(checked = meta?.biometricWrappedKey != null, onCheckedChange = { on ->
                             if (!on) {
                                 repo.disableBiometric()
-                            } else {
+                            } else withPassword("Turn on fingerprint unlock") {
                                 scope.launch {
                                     val r = activity.biometricPrompt("Turn on fingerprint unlock", cipher = repo.biometricEnrollCipher(), negativeText = "Cancel")
                                     if (r is AuthOutcome.Success) repo.enableBiometric(r.cipher!!)
@@ -158,7 +165,11 @@ fun SettingsScreen(repo: VaultRepository, onBack: () -> Unit) {
                 leadingContent = { Icon(Icons.Outlined.Pin, null) },
                 trailingContent = {
                     Switch(checked = settings.reauthForCardSecrets, onCheckedChange = { on ->
-                        repo.updateSettings { it.copy(reauthForCardSecrets = on) }
+                        if (on) {
+                            repo.updateSettings { it.copy(reauthForCardSecrets = true) }
+                        } else withPassword("Stop asking before PIN and CVV") {
+                            repo.updateSettings { it.copy(reauthForCardSecrets = false) }
+                        }
                     })
                 },
             )
@@ -168,7 +179,11 @@ fun SettingsScreen(repo: VaultRepository, onBack: () -> Unit) {
                 leadingContent = { Icon(Icons.Outlined.WarningAmber, null) },
                 trailingContent = {
                     Switch(checked = settings.wipeAfterFailures, onCheckedChange = { on ->
-                        if (on) confirmWipeSetting = true else repo.updateSettings { it.copy(wipeAfterFailures = false) }
+                        if (on) {
+                            confirmWipeSetting = true
+                        } else withPassword("Turn off auto-erase") {
+                            repo.updateSettings { it.copy(wipeAfterFailures = false) }
+                        }
                     })
                 },
             )
@@ -185,9 +200,11 @@ fun SettingsScreen(repo: VaultRepository, onBack: () -> Unit) {
                 supportingContent = { Text("Save a file you can keep on a PC or pen drive. It opens only with your master password.") },
                 leadingContent = { Icon(Icons.Outlined.Upload, null) },
                 modifier = Modifier.clickable {
-                    app.autoLock.expectExternalActivity()
-                    val date = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
-                    exportLauncher.launch("safevault-backup-$date.svault")
+                    withPassword("Export encrypted backup") {
+                        app.autoLock.expectExternalActivity()
+                        val date = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
+                        exportLauncher.launch("safevault-backup-$date.svault")
+                    }
                 },
             )
             ListItem(
@@ -225,7 +242,12 @@ fun SettingsScreen(repo: VaultRepository, onBack: () -> Unit) {
 
     when (picker) {
         "autolock" -> ChoiceDialog("Auto-lock", autoLockChoices, settings.autoLockSeconds,
-            onPick = { v -> repo.updateSettings { it.copy(autoLockSeconds = v) }; picker = null },
+            onPick = { v ->
+                picker = null
+                val apply = { repo.updateSettings { it.copy(autoLockSeconds = v) } }
+                // Locking sooner is always fine; staying open longer needs the password.
+                if (v <= settings.autoLockSeconds) apply() else withPassword("Lock later") { apply() }
+            },
             onDismiss = { picker = null })
         "clipboard" -> ChoiceDialog("Clear copied passwords after", clipboardChoices, settings.clipboardClearSeconds,
             onPick = { v -> repo.updateSettings { it.copy(clipboardClearSeconds = v) }; picker = null },
@@ -244,9 +266,28 @@ fun SettingsScreen(repo: VaultRepository, onBack: () -> Unit) {
         )
     }
 
+    gate?.let { (title, action) ->
+        PasswordPromptDialog(
+            title = title,
+            message = "Enter your master password to continue.",
+            confirmText = "Continue",
+            onSubmit = { pw ->
+                val ok = repo.verifyPassword(pw)
+                pw.fill(' ')
+                if (ok) { gate = null; action(); null } else "That password isn't right."
+            },
+            onDismiss = { gate = null },
+        )
+    }
+
     if (changePassword) ChangePasswordDialog(repo, onDone = { changed ->
         changePassword = false
-        if (changed) toast("Master password changed. Old backups still open with the old password.")
+        if (changed) {
+            toast(
+                "Master password changed. Fingerprint unlock is off; turn it on again if you use it. " +
+                    "Export a new backup: old ones open only with the old password.",
+            )
+        }
     })
 
     importing?.let { b ->
@@ -321,11 +362,10 @@ private fun ChangePasswordDialog(repo: VaultRepository, onDone: (Boolean) -> Uni
     var confirm by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
-    val strength = PasswordStrength.evaluate(new)
     val problem = when {
         new.isEmpty() -> null
-        new.length < 8 -> "Use at least 8 characters."
-        strength.score < Strength.FAIR.score -> "This password is too easy to guess."
+        else -> PasswordStrength.masterPasswordProblem(new)
+    } ?: when {
         confirm.isNotEmpty() && confirm != new -> "The new passwords don't match."
         else -> null
     }

@@ -63,7 +63,7 @@ password-manager/
 |---|---|
 | `Models.kt` | Serializable data: `VaultItem`, `LoginData`, `CardData`, `VaultData`, `VaultMeta` (plain header), `VaultSettings`, `BackupFile`. `Sealed` = a field-encrypted string. `Field` = field names used as encryption context. |
 | `VaultCodec.kt` | **Pure Kotlin** format logic: create a vault, wrap/unwrap the master key with a password, encrypt/decrypt the data file, make/parse/open backups, re-seal items under another key, merge items. Fully unit-tested. |
-| `VaultStorage.kt` | Reads/writes `vault.meta` and `vault.dat` atomically (`AtomicFile`) in `noBackupFilesDir`. Overwrites the files before deleting them on wipe. |
+| `VaultStorage.kt` | Reads/writes `vault.meta` and `vault.dat` atomically (`AtomicFile`) in `noBackupFilesDir`, plus `vault.dat.next`, which exists only during a master-key change (D-032). Overwrites the files before deleting them on wipe. |
 | `VaultRepository.kt` | The **single owner of vault state**. Exposes `state: StateFlow<VaultState>` (NoVault / Locked / Unlocked(items)) and `meta`. Handles create, unlock (password or biometric), lock, add/edit/delete, reveal/seal fields, settings, password change, backup export/import/restore, wipe, and the failed-attempt counter. Holds the keys only while unlocked. |
 
 ### `security/`: runtime protections
@@ -94,7 +94,7 @@ password-manager/
 | `screens/DetailScreen.kt` | Shows a login or card. Reveal/copy with auto-hide after 30 s; PIN/CVV go through `ReauthController`. |
 | `screens/EditScreen.kt` | Add/edit form for logins and cards. `Draft` holds plain values only while open, sealed again on save. Shows the generator on top of itself so the draft survives (D-023). Expiry is kept as digits and drawn as MM/YY by `ExpiryTransformation` (D-025). |
 | `screens/GeneratorScreen.kt` | Password generator; can hand a password back to the editor. |
-| `screens/SettingsScreen.kt` | All settings, backup export/import (Storage Access Framework), change password, delete vault. |
+| `screens/SettingsScreen.kt` | All settings, backup export/import (Storage Access Framework), change password, delete vault. Actions that weaken protection or export data go through a master-password gate (`withPassword`, D-031). |
 
 ### Root files
 | File | What it does |
@@ -152,6 +152,14 @@ the hardware-authorised cipher.
 **Reveal a secret:** `DetailScreen.toggle(field)` → PIN/CVV go through `ReauthController.confirm`
 first → `repo.reveal(sealed, itemId, field)` → value is kept in a local map, cleared after 30 s.
 
+**Edit a card:** CVV/PIN stay sealed (`Draft.cardSecretsLocked`) until **Show PIN and CVV** passes
+`ReauthController.confirm`; saving while still locked keeps the stored sealed values (D-031).
+
+**Change master password:** `repo.changePassword` → `VaultCodec.rotateMaster` (new master key,
+every field re-sealed, new wrap, biometric off) → write `vault.dat.next` → write `vault.meta`
+(commit) → rename over `vault.dat` → session switches to the new keys. `openFromDisk` finishes
+or discards a change a crash interrupted (D-032).
+
 **Save an item:** `EditScreen.save` → `repo.seal(...)` each secret → `repo.upsert(item)` →
 re-encrypt the whole `VaultData` → atomic write.
 
@@ -192,9 +200,11 @@ with the same key, or Android refuses the update.
 **Unit tests** (`app/src/test`, run on the PC in seconds):
 - `VaultCodecTest`: password wrap/unwrap, wrong password, encrypt/decrypt round trip, secrets
   stay sealed after the outer decrypt, tamper detection, field context binding, random IVs,
-  password change, backup round trip, invalid backup files, re-sealing, merge rules, Argon2
+  password change, master-key rotation on password change (old backup + old password can't open
+  new data), backup round trip, invalid backup files, re-sealing, merge rules, Argon2
   determinism.
-- `PasswordToolsTest`: generator length, character groups and uniqueness; strength ratings.
+- `PasswordToolsTest`: generator length, character groups and uniqueness; strength ratings;
+  word-plus-digits passwords rated Weak; master password policy (12+ characters, Strong).
 - `BrandMatcherTest`: name and website matching, longest match wins, no matches inside other
   words, card bank-then-network order, colour-only brands, catalogue sanity.
 - `CardUtilsTest`: expiry typed key by key keeps year digits in order, single-digit month
@@ -284,6 +294,31 @@ SDK="$LOCALAPPDATA/Android/Sdk"
 | Preview: brand tiles for Gmail, HDFC, Netflix, Instagram, Swiggy, GitHub, Mastercard (Federal Bank card); LinkedIn letter on brand blue; "Work laptop" keeps its letter; dark mode readable | ✔ (brand logos not yet seen on a device) |
 | Logo: the preview's lock-screen logo had a distorted keyhole and an off-centre shield (preview-only bug, fixed). The APK draws the unmodified `ic_launcher_foreground` vector centred by `BrandMark`; confirmed in code, not by screenshot (FLAG_SECURE) | ✔ |
 | Desktop preview: `1227` → `12/27`, `529` → `05/29`, `13` flagged, backspace across the slash, `083199` → `08/31`, save shows `12/27` | ✔ |
+
+**2026-11-03/04: security test (VAPT) and fixes for its medium findings.** Code review of the
+whole app, the release APK (aapt2/apksigner) and proof-of-concept unit tests.
+
+| Check | Result |
+|---|---|
+| Release APK: permissions, exported components, backup flags, signing, secrets in git | ✔ no INTERNET; only androidx's DUMP-protected receiver exported; signing files never committed |
+| M1 PIN/CVV readable from the Edit screen without re-auth | found → fixed (D-031) |
+| M2 export / fingerprint on / checks off without master password | found → fixed (D-031) |
+| M3 old backup + old password decrypts data written after a password change | found (PoC recovered the secret) → fixed (D-032), regression test |
+| M4 "Mumbai@123", "India@2024" accepted as master passwords | found (PoC) → fixed (D-033), regression tests |
+| Unit tests after fixes | 30/30 pass; `assembleRelease` ✔ |
+| Fixes on a device (Edit unlock button, Settings password prompts, password change then unlock) | not done: emulator UI too slow; check on the phone |
+
+Open low-severity findings, not fixed yet:
+- Unlock lockout uses the wall clock (changing the date skips it); the confirm-password dialogs
+  don't count wrong attempts.
+- Backup KDF settings and file size aren't bounded (a crafted file can crash the app); restore
+  adopts the backup's KDF settings.
+- The PIN/CVV fingerprint check isn't tied to a key (no `CryptoObject`), so hooking tools on a
+  rooted phone can skip it.
+- No `filterTouchesWhenObscured` (tapjacking on Android 8-11); `taskAffinity` not cleared
+  (task hijacking on Android < 11).
+- Notes, username and other plain fields don't ask the keyboard not to learn them.
+- Clipboard auto-clear is lost if Android kills the process first.
 
 **Not yet tested:** fingerprint enrolment and unlock, import (merge) into an existing vault,
 change master password, the erase-after-10 setting, and a real phone.

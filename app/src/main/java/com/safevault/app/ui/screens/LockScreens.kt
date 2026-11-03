@@ -63,7 +63,6 @@ import com.safevault.app.ui.components.PasswordField
 import com.safevault.app.ui.components.PasswordPromptDialog
 import com.safevault.app.ui.components.StrengthMeter
 import com.safevault.app.util.PasswordStrength
-import com.safevault.app.util.Strength
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -132,10 +131,7 @@ fun SetupScreen(repo: VaultRepository) {
     var backup by remember { mutableStateOf<BackupFile?>(null) }
     val confirmFocus = remember { FocusRequester() }
 
-    val strength = PasswordStrength.evaluate(pw)
-    val problem = when {
-        pw.length < 8 -> "Use at least 8 characters."
-        strength.score < Strength.FAIR.score -> "This password is too easy to guess. Try a longer phrase."
+    val problem = PasswordStrength.masterPasswordProblem(pw) ?: when {
         confirm.isNotEmpty() && confirm != pw -> "The passwords don't match."
         else -> null
     }

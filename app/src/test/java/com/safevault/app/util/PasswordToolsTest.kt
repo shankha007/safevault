@@ -40,4 +40,22 @@ class PasswordToolsTest {
         assertTrue(PasswordStrength.evaluate("k7#Rq9!vLm2@xT4z").score >= Strength.STRONG.score)
         assertTrue(PasswordStrength.evaluate(PasswordGenerator.generate(GeneratorOptions())) == Strength.VERY_STRONG)
     }
+
+    @Test
+    fun wordPlusDigitsIsNotStrong() {
+        // VAPT M4: these were rated Fair or Strong and accepted as master passwords.
+        for (pw in listOf("Mumbai@123", "India@2024", "Rahul@123", "Summer2024", "Summer24!")) {
+            assertTrue(pw, PasswordStrength.evaluate(pw).score < Strength.FAIR.score)
+        }
+    }
+
+    @Test
+    fun masterPasswordPolicy() {
+        for (pw in listOf("Mumbai@123", "India@2024!!", "Mumbai@12345", "short", "abcdefghijkl")) {
+            assertTrue(pw, PasswordStrength.masterPasswordProblem(pw) != null)
+        }
+        for (pw in listOf("river mango lamp cloud", "k7#Rq9!vLm2@xT4z", PasswordGenerator.generate(GeneratorOptions()))) {
+            assertEquals(pw, null, PasswordStrength.masterPasswordProblem(pw))
+        }
+    }
 }
