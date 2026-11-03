@@ -4,7 +4,7 @@ An offline password manager for Android. It keeps website logins and bank cards 
 encrypted vault on your phone. The app has no internet permission, so nothing it stores can
 leave the device.
 
-**Version 1.1.0** · Android 8.0+ (API 26), targets Android 15 (API 35) · Kotlin + Jetpack Compose
+**Version 1.2.0** · Android 8.0+ (API 26), targets Android 15 (API 35) · Kotlin + Jetpack Compose
 
 ---
 

@@ -331,6 +331,18 @@ Still open (by design or accepted): wiping overwrites files with zeros, which fl
 doesn't guarantee to erase (file-based encryption covers this); the vault stays unlocked up to
 3 minutes while the file picker is open (D-012).
 
+**2026-11-04: v1.2.0 release APK** (`release/SafeVault-1.2.0.apk`, SHA-256
+`4f656e3de9232cfed59317c01b1d8e5f3ab731c738b670866a22e5e041653a39`). All VAPT fixes (D-031 to D-038).
+
+| Check | Result |
+|---|---|
+| Clean build, unit tests (release variant) | 40/40 pass |
+| Version | `versionCode 3`, `versionName 1.2.0` |
+| Signature | v2, `CN=SafeVault, O=Personal, C=IN`, certificate SHA-256 `9a91a425…58f1095f`, **same as 1.1.0**, so it installs as an update |
+| Permissions | `USE_BIOMETRIC`, `USE_FINGERPRINT` only, **no INTERNET**; not debuggable |
+| Manifest | `taskAffinity=""` on `MainActivity`; `ClipboardClearReceiver` not exported |
+| Update over 1.1.0 and the new behaviour on a device | not done; check on the phone (see the VAPT table above) |
+
 **Not yet tested:** fingerprint enrolment and unlock, import (merge) into an existing vault,
 change master password, the erase-after-10 setting, and a real phone.
 

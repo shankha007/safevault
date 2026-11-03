@@ -9,7 +9,7 @@ _Last updated: 2026-10-28 (Phase 1)_
 
 ## 1. Installing the app
 
-1. Copy the newest APK from `release/` (now `SafeVault-1.1.0.apk`) to your phone (USB cable, Google Drive, or a pen drive).
+1. Copy the newest APK from `release/` (now `SafeVault-1.2.0.apk`) to your phone (USB cable, Google Drive, or a pen drive).
 2. Open it from the phone's **Files** app.
 3. Android asks to allow installs from that app. Choose **Settings → Allow from this source**,
    then go back and tap **Install**.
