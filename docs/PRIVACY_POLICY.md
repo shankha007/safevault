@@ -67,4 +67,4 @@ If this policy changes, the new version will be published at this same address w
 
 ## Contact
 
-Questions about this policy: CONTACT_EMAIL
+Questions about this policy: shankhasdas07@gmail.com

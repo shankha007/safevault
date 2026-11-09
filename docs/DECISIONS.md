@@ -745,6 +745,6 @@ content rating forms must be filled in.
 **Checked:** the only native library (`libandroidx.graphics.path.so`, pulled in by Compose)
 already has 16 KB-aligned segments, so Play's 16 KB page-size rule is met.
 
-**Open:** the contact email in the privacy policy and on the listing; the Play developer
+**Open:** the contact email on the Play listing (the policy has it since 2026-11-09); the Play developer
 account (personal accounts need a 12-tester, 14-day closed test before production);
 the graphics.

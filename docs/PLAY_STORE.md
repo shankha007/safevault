@@ -65,7 +65,7 @@ until Google support resets the upload key.
 **Privacy policy URL:**
 `https://github.com/shankha007/safevault/blob/main/docs/PRIVACY_POLICY.md`
 (only works if the repository is public; otherwise host `docs/PRIVACY_POLICY.md` anywhere
-public). Replace `CONTACT_EMAIL` in that file before publishing.
+public). The contact email in it is filled in; use the same address on the listing.
 
 ### Graphics
 
