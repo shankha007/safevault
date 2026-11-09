@@ -4,7 +4,7 @@ An offline password manager for Android. It keeps website logins and bank cards 
 encrypted vault on your phone. The app has no internet permission, so nothing it stores can
 leave the device.
 
-**Version 1.2.0** · Android 8.0+ (API 26), targets Android 15 (API 35) · Kotlin + Jetpack Compose
+**Version 1.2.1** · Android 8.0+ (API 26), targets Android 16 (API 36) · Kotlin + Jetpack Compose
 
 ---
 
@@ -44,12 +44,13 @@ Full step-by-step use is in [docs/USER_WORKFLOW.md](docs/USER_WORKFLOW.md).
 
 ## Build
 
-You need JDK 17 and the Android SDK (platform 35, build-tools 35).
+You need JDK 17 and the Android SDK (platform 36, build-tools 36).
 
 ```bash
 ./gradlew testDebugUnitTest      # unit tests
 ./gradlew assembleDebug          # debug APK (app id com.safevault.app.debug)
 ./gradlew assembleRelease        # signed, shrunk release APK
+./gradlew bundleRelease          # signed release AAB for Google Play
 ```
 
 The release build is signed only when `signing/keystore.properties` exists. That folder is
@@ -73,6 +74,8 @@ videos), `desktop-preview/` (a temporary HTML copy of the UI for testing on a PC
   and testing, test log.
 - [User workflow](docs/USER_WORKFLOW.md): how the app is used, screen by screen.
 - [Decision log](docs/DECISIONS.md): every technical decision and the reasons for it.
+- [Play Store guide](docs/PLAY_STORE.md): listing text and Play Console answers.
+- [Privacy policy](docs/PRIVACY_POLICY.md).
 
 ## Licences
 

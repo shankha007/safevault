@@ -3,19 +3,24 @@
 How you'll use SafeVault day to day, screen by screen. This file is updated whenever a
 feature is added or changed.
 
-_Last updated: 2026-10-28 (Phase 1)_
+_Last updated: 2026-11-09 (1.2.1, Play Store preparation)_
 
 ---
 
 ## 1. Installing the app
 
-1. Copy the newest APK from `release/` (now `SafeVault-1.2.0.apk`) to your phone (USB cable, Google Drive, or a pen drive).
+1. Copy the newest APK from `release/` (now `SafeVault-1.2.1.apk`) to your phone (USB cable, Google Drive, or a pen drive).
 2. Open it from the phone's **Files** app.
 3. Android asks to allow installs from that app. Choose **Settings → Allow from this source**,
    then go back and tap **Install**.
 4. Play Protect may say the app is unrecognised. That's because it isn't from the Play Store.
    Tap **More details → Install anyway**.
 5. After installing, you can turn the "Allow from this source" permission off again.
+
+**From Google Play (once published):** install SafeVault from its Play Store page like any
+other app; steps 1 to 5 aren't needed. A copy installed from an APK can only be updated by
+the Play version if Play signs the app with the same key (see D-039). If it can't, export a
+backup, uninstall the APK copy, install from Play and restore the backup.
 
 **Want a quick tour first?** `demos/SafeVault-1.1.0-demo.mp4` is a 3-minute captioned video
 of every feature below. Shorter clips, one per feature group, are in `demos/shorts/`.

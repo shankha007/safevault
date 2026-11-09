@@ -711,3 +711,40 @@ can be late in deep Doze; Android 13+ also clears the clipboard on its own after
 **Also fixed (informational):** `BiometricKeys.decryptCipher` now turns fingerprint unlock off
 on any Keystore error, not only "fingerprints changed". Before, other errors crashed the
 unlock screen, which opens the fingerprint prompt by itself on every launch.
+
+---
+
+## D-039 · Publishing on Google Play
+**Date:** 2026-11-09 · **Status:** Accepted
+
+**Context:** SafeVault was only installed from APKs. Publishing on Google Play brings its own
+rules: uploads must be an Android App Bundle, new apps and updates must target a recent API
+level (raised every year), every listing needs a privacy policy URL, and the Data safety and
+content rating forms must be filled in.
+
+**Decision:**
+- Version **1.2.1** (versionCode 4) raises `compileSdk` and `targetSdk` from 35 to **36**. No
+  code changes were needed: edge-to-edge is already set up (`enableEdgeToEdge()`), back
+  handling uses Compose `BackHandler` (works with predictive back, which API 36 turns on),
+  and the activity doesn't lock its orientation (ignored on large screens at API 36).
+  AGP stays at 8.7.3; it builds against SDK 36 without errors.
+- The Play upload is the AAB from `./gradlew bundleRelease`, signed with the existing
+  `signing/release.jks`.
+- **Recommended:** at the first upload, choose Play App Signing with **your own key**
+  (export `release.jks` with Google's PEPK tool). Then copies already installed from an APK
+  update from Play without losing the vault. With a Google-generated key, those users must
+  back up, uninstall and reinstall.
+- The privacy policy is `docs/PRIVACY_POLICY.md`, linked from GitHub. It states that nothing
+  is collected; the Data safety answer is "no data collected or shared", which holds because
+  the app has no INTERNET permission.
+- Listing text and form answers are kept in `docs/PLAY_STORE.md`.
+- `FLAG_SECURE` stays on in release builds. Store screenshots have to be made another way
+  (for example a debug build with the flag off, or the desktop preview), never by weakening
+  the release build.
+
+**Checked:** the only native library (`libandroidx.graphics.path.so`, pulled in by Compose)
+already has 16 KB-aligned segments, so Play's 16 KB page-size rule is met.
+
+**Open:** the contact email in the privacy policy and on the listing; the Play developer
+account (personal accounts need a 12-tester, 14-day closed test before production);
+the graphics.

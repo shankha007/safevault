@@ -18,7 +18,7 @@
         android:label="@string/app_name"
         android:supportsRtl="true"
         android:theme="@style/Theme.SafeVault"
-        tools:targetApi="35">
+        tools:targetApi="36">
 
         <!-- configChanges: rotation / dark-mode switches don't recreate the activity, so
              typed secrets never have to go through saved-instance-state (which can hit disk).

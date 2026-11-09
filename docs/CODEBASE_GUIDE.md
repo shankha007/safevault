@@ -4,7 +4,7 @@ A map of the code: what each part does, how data flows, and how to build, test a
 it. This file is updated as the code changes. Design reasoning lives in
 [DECISIONS.md](DECISIONS.md); the user's view of the app is in [USER_WORKFLOW.md](USER_WORKFLOW.md).
 
-_Last updated: 2026-10-28 (Phase 1)_
+_Last updated: 2026-11-09 (1.2.1, Play Store preparation)_
 
 ---
 
@@ -22,8 +22,10 @@ password-manager/
 ├── docs/
 │   ├── CODEBASE_GUIDE.md       this file
 │   ├── USER_WORKFLOW.md        how the app is used
-│   └── DECISIONS.md            technical decision log
-├── release/                    finished APKs to install on the phone
+│   ├── DECISIONS.md            technical decision log
+│   ├── PLAY_STORE.md           Play Console listing text and form answers (D-039)
+│   └── PRIVACY_POLICY.md       public privacy policy linked from the Play listing
+├── release/                    finished APKs (sideload) and AABs (Google Play)
 ├── demos/                      demo video, shorts/, carousel/, LINKEDIN_POSTS.md (NOT in git)
 ├── desktop-preview/            TEMPORARY HTML mirror of the UI for testing on a PC (D-027, NOT in git)
 │   ├── make_demo.py            records the captioned product demo video from it (D-029)
@@ -173,7 +175,7 @@ state = `Locked` → `AppRoot` shows `UnlockScreen`. The unlocked back stack is 
 
 Requirements (already installed on this PC):
 - JDK 17: `C:\Program Files\Eclipse Adoptium\jdk-17.0.20.101-hotspot`
-- Android SDK: `%LOCALAPPDATA%\Android\Sdk` (platform 35, build-tools 35)
+- Android SDK: `%LOCALAPPDATA%\Android\Sdk` (platform 36, build-tools 36)
 
 From Git Bash in the project folder:
 
@@ -182,17 +184,21 @@ export JAVA_HOME="/c/Program Files/Eclipse Adoptium/jdk-17.0.20.101-hotspot"
 ./gradlew testDebugUnitTest      # run unit tests
 ./gradlew assembleDebug          # debug APK (app id com.safevault.app.debug)
 ./gradlew assembleRelease        # signed, shrunk release APK
+./gradlew bundleRelease          # signed release AAB for Google Play
 ```
 
 Outputs:
 - `app/build/outputs/apk/debug/app-debug.apk`
 - `app/build/outputs/apk/release/app-release.apk` (copied to `release/SafeVault-<version>.apk`)
+- `app/build/outputs/bundle/release/app-release.aab` (copied to `release/SafeVault-<version>.aab`; this is what goes to Play)
 
 The release build is signed only if `signing/keystore.properties` exists.
 
 **Releasing a new version:** bump `versionCode` (+1) and `versionName` in
 `app/build.gradle.kts`, build the release, and install it over the old app. It must be signed
-with the same key, or Android refuses the update.
+with the same key, or Android refuses the update. For Google Play, upload the AAB; every
+upload needs a `versionCode` higher than any uploaded before. Play's yearly target-SDK rule
+means `targetSdk` has to be raised about once a year (D-039).
 
 ---
 
@@ -345,6 +351,24 @@ doesn't guarantee to erase (file-based encryption covers this); the vault stays 
 
 **Not yet tested:** fingerprint enrolment and unlock, import (merge) into an existing vault,
 change master password, the erase-after-10 setting, and a real phone.
+
+**2026-11-09: v1.2.1, target SDK 36 for Google Play** (`release/SafeVault-1.2.1.apk`, SHA-256
+`b5b4b647c05efd1f5bdf979fef18ccba34dbcdfd107681180c17137fcfcc517c`; `release/SafeVault-1.2.1.aab`,
+SHA-256 `4084983cda4bebb2871baf391662fb3749ef471e9258f4728bf9e60e60161c0a`). No code changes, only
+SDK levels (D-039).
+
+| Check | Result |
+|---|---|
+| Unit tests (release variant) | 40/40 pass |
+| Version / SDK | `versionCode 4`, `versionName 1.2.1`, compile and target SDK 36 |
+| Signature | APK and AAB signed with `CN=SafeVault, O=Personal, C=IN`, certificate SHA-256 `9a91a425…58f1095f` (same as 1.2.0) |
+| Permissions | `USE_BIOMETRIC`, `USE_FINGERPRINT` only, **no INTERNET** |
+| Native libraries | only `libandroidx.graphics.path.so` (Compose), LOAD segments aligned to 16 KB on all 4 ABIs |
+| Update over 1.1.0 on the Android 15 emulator | ✔ installed as an update, launched, no crash |
+| Screens on the emulator | not checked: the emulator was too slow (system "not responding" dialogs) |
+
+**Not yet tested:** 1.2.1 on an Android 16 device or emulator, and the predictive-back
+behaviour that target SDK 36 turns on (back is handled by Compose `BackHandler`, which supports it).
 
 ---
 
