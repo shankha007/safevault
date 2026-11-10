@@ -4,7 +4,7 @@ A map of the code: what each part does, how data flows, and how to build, test a
 it. This file is updated as the code changes. Design reasoning lives in
 [DECISIONS.md](DECISIONS.md); the user's view of the app is in [USER_WORKFLOW.md](USER_WORKFLOW.md).
 
-_Last updated: 2026-11-09 (1.2.1, Play Store preparation)_
+_Last updated: 2026-11-10 (1.3.0, new package name for Google Play)_
 
 ---
 
@@ -182,7 +182,7 @@ From Git Bash in the project folder:
 ```bash
 export JAVA_HOME="/c/Program Files/Eclipse Adoptium/jdk-17.0.20.101-hotspot"
 ./gradlew testDebugUnitTest      # run unit tests
-./gradlew assembleDebug          # debug APK (app id com.safevault.app.debug)
+./gradlew assembleDebug          # debug APK (app id com.shankhadas.safevault.debug)
 ./gradlew assembleRelease        # signed, shrunk release APK
 ./gradlew bundleRelease          # signed release AAB for Google Play
 ```
@@ -369,6 +369,21 @@ SDK levels (D-039).
 
 **Not yet tested:** 1.2.1 on an Android 16 device or emulator, and the predictive-back
 behaviour that target SDK 36 turns on (back is handled by Compose `BackHandler`, which supports it).
+
+**2026-11-10: v1.3.0, package name `com.shankhadas.safevault`** (`release/SafeVault-1.3.0.apk`,
+SHA-256 `b933ad6a828aa1aab69ecdf2a4413fe304fc93fc0ea030c5edf9a1aaa1e047a8`; `release/SafeVault-1.3.0.aab`,
+SHA-256 `04e67ba4e7ee5925e8b27d08e88ac22bcfefac2709a7bb637ab4d718fafaabd2`). Only `applicationId`
+changed (D-040); the Kotlin package and `namespace` stay `com.safevault.app`.
+
+| Check | Result |
+|---|---|
+| Unit tests (release variant) | 40/40 pass |
+| Package / version | `com.shankhadas.safevault`, `versionCode 5`, `versionName 1.3.0`, target SDK 36 |
+| Permissions | `USE_BIOMETRIC`, `USE_FINGERPRINT` only, **no INTERNET** |
+| AAB signature | verifies, same `release.jks` key |
+
+**Not yet tested:** 1.3.0 on a device, including restoring a backup made by the old
+`com.safevault.app` install.
 
 ---
 

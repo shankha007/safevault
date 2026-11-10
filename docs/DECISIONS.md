@@ -730,7 +730,7 @@ content rating forms must be filled in.
   AGP stays at 8.7.3; it builds against SDK 36 without errors.
 - The Play upload is the AAB from `./gradlew bundleRelease`, signed with the existing
   `signing/release.jks`.
-- **Recommended:** at the first upload, choose Play App Signing with **your own key**
+- **Superseded by D-040:** at the first upload, choose Play App Signing with **your own key**
   (export `release.jks` with Google's PEPK tool). Then copies already installed from an APK
   update from Play without losing the vault. With a Google-generated key, those users must
   back up, uninstall and reinstall.
@@ -748,3 +748,26 @@ already has 16 KB-aligned segments, so Play's 16 KB page-size rule is met.
 **Open:** the contact email on the Play listing (the policy has it since 2026-11-09); the Play developer
 account (personal accounts need a 12-tester, 14-day closed test before production);
 the graphics.
+
+---
+
+## D-040 · New package name: com.shankhadas.safevault
+**Date:** 2026-11-10 · **Status:** Accepted (amends D-039)
+
+**Context:** Play Console refused `com.safevault.app` because another developer's published
+app already uses it. Package names are unique across Play and can't be changed after the
+first upload.
+
+**Decision:** version **1.3.0** (versionCode 5) sets `applicationId` to
+**`com.shankhadas.safevault`**, which the user chose (it was free on Play). Only the
+application ID changes. The Kotlin package and Gradle `namespace` stay `com.safevault.app`,
+so no source files move. The debug build becomes `com.shankhadas.safevault.debug`.
+
+**Consequences:**
+- Android sees 1.3.0 as a different app from earlier APKs. It installs alongside them, with
+  its own empty storage and its own Keystore keys (so fingerprint unlock is set up again).
+  Users move their vault with an encrypted `.svault` backup, which doesn't depend on the
+  package name.
+- Keeping the old signing key on Play no longer helps old installs update, so D-039's advice
+  to upload our own key is dropped: let Google generate the app signing key, and use
+  `release.jks` as the upload key.

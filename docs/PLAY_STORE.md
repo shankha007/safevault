@@ -8,8 +8,8 @@ listing text, and the answers to the policy forms. Decision: D-039.
 | | |
 |---|---|
 | File to upload | `app/build/outputs/bundle/release/app-release.aab` (built by `./gradlew bundleRelease`) |
-| Package name | `com.safevault.app` (permanent once uploaded) |
-| Version | 1.2.1 (versionCode 4) |
+| Package name | `com.shankhadas.safevault` (permanent once uploaded; `com.safevault.app` is taken on Play, D-040) |
+| Version | 1.3.0 (versionCode 5), file `release/SafeVault-1.3.0.aab` |
 | Target / min SDK | 36 / 26 |
 | Signing | Signed with `signing/release.jks`, which acts as the **upload key** under Play App Signing |
 | 16 KB page size | OK. The only native library (`libandroidx.graphics.path.so`, from Compose) has 16 KB-aligned segments |
@@ -102,6 +102,7 @@ Screenshots must be taken another way (see D-039).
    production access.
 3. **Production**: after Google approves production access. Review usually takes a few days.
 
-Existing users who installed SafeVault from an APK can only move to the Play version if
-Play App Signing uses the same key (choose "use my own key" and upload `release.jks` at
-first release) or after uninstalling, which deletes the vault. Export a backup first.
+**App signing:** let Google generate the app signing key (the default). `release.jks` is
+then only the upload key. Because the package name changed (D-040), the Play app is a new
+app to Android either way: it installs next to any older APK copy (`com.safevault.app`)
+instead of updating it. Move the vault across with an encrypted backup.
