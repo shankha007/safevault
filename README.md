@@ -62,6 +62,7 @@ not in git. Updates must be signed with the same key, or Android refuses to inst
 app/        Android app (crypto/, data/, security/, util/, ui/)
 docs/       CODEBASE_GUIDE.md, USER_WORKFLOW.md, DECISIONS.md
 tools/      gen_brand_icons.py: regenerates the bundled brand logos
+play-store/ Play Store icon, feature graphic and screenshots
 ```
 
 These folders stay local and are git-ignored: `release/` (APKs), `demos/` (product demo

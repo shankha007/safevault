@@ -71,12 +71,13 @@ public). The contact email in it is filled in; use the same address on the listi
 
 | Asset | Size | Notes |
 |---|---|---|
-| App icon | 512 × 512 PNG, 32-bit | Export from the launcher icon |
-| Feature graphic | 1024 × 500 JPG/PNG | Required |
-| Phone screenshots | 2 to 8, 16:9 or 9:16, 320–3840 px per side | Use a demo vault with fake entries only |
+| App icon | 512 × 512 PNG, 32-bit | `play-store/icon-512.png` |
+| Feature graphic | 1024 × 500 JPG/PNG | `play-store/feature-graphic.png` |
+| Phone screenshots | 2 to 8, 16:9 or 9:16, 320–3840 px per side | `play-store/screenshot-01.png` to `-06.png` (1080 × 1920), upload in that order |
 
-SafeVault sets `FLAG_SECURE`, so phone screenshots and `adb screencap` come out black.
-Screenshots must be taken another way (see D-039).
+All of these are made by `python -I desktop-preview/make_play_assets.py` (D-041). The
+release app sets `FLAG_SECURE`, so the phone screens come from the desktop preview, filled
+with a generic demo vault (no real service names or logos).
 
 ## 3. App content forms
 

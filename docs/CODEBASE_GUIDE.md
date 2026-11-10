@@ -30,7 +30,9 @@ password-manager/
 ├── desktop-preview/            TEMPORARY HTML mirror of the UI for testing on a PC (D-027, NOT in git)
 │   ├── make_demo.py            records the captioned product demo video from it (D-029)
 │   ├── make_shorts.py          records 3 short feature videos, 16:9 and 9:16 (D-030)
-│   └── make_carousel.py        builds the LinkedIn carousel PDF and slide PNGs (D-030)
+│   ├── make_carousel.py        builds the LinkedIn carousel PDF and slide PNGs (D-030)
+│   └── make_play_assets.py     builds the Play Store icon, feature graphic and screenshots (D-041)
+├── play-store/                 Play Store graphics: icon-512, feature-graphic, screenshot-01..06 (in git)
 ├── tools/gen_brand_icons.py    regenerates the bundled brand logos (D-028); needs internet, the app doesn't
 └── app/
     ├── build.gradle.kts        SDK levels, signing, R8, dependencies

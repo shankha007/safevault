@@ -771,3 +771,30 @@ so no source files move. The debug build becomes `com.shankhadas.safevault.debug
 - Keeping the old signing key on Play no longer helps old installs update, so D-039's advice
   to upload our own key is dropped: let Google generate the app signing key, and use
   `release.jks` as the upload key.
+
+---
+
+## D-041 · Play Store graphics made from the desktop preview
+**Date:** 2026-11-10 · **Status:** Accepted
+
+**Context:** the Play listing needs a 512 px icon, a 1024×500 feature graphic and at least two
+phone screenshots. The launcher icon is a vector drawable with no PNG, and the release app
+sets `FLAG_SECURE`, so real screenshots come out black. The emulator is too slow to drive
+reliably (see the 1.2.1 test log).
+
+**Decision:** `desktop-preview/make_play_assets.py` renders everything with headless Chrome
+into `play-store/`, which is committed:
+- **Icon:** the launcher shield on `#1E4FD8`, cropped to the 72dp area a launcher shows, full
+  bleed and unrounded (Play applies its own mask), saved as 32-bit PNG.
+- **Feature graphic:** app mark, name, one-line pitch and three short chips on the dark blue
+  brand gradient used for the carousel (D-030).
+- **Screenshots:** six 1080×1920 images, a headline above a phone frame showing the preview's
+  home, fingerprint unlock, password generator, card detail, settings and backup import
+  screens. `FLAG_SECURE` stays on in release builds.
+- The demo vault is replaced with generic names (Personal email, Movie streaming, My Bank…)
+  so no third-party service names or brand logos appear in the listing; Play can reject
+  listings that show other companies' marks. The card network mark (Visa) still shows, as
+  it does in the app.
+
+**Trade-off:** the screens come from the HTML mirror of the UI (D-027), not the device. If
+the app's screens change, update the preview and rerun the script.
